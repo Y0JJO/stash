@@ -28,24 +28,31 @@ jobs:
           - { name: mac-x64, os: macos-15-intel, flag: --mac --x64 }
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    if: ${{ inputs.platforms == 'all' || startsWith(matrix.name, inputs.platforms) }}
     env:
       TAG: ${{ inputs.tag }}
       GH_TOKEN: ${{ github.token }}
+      # Job-level conditions can't see the matrix, so every step checks this instead.
+      WANTED: ${{ inputs.platforms == 'all' || startsWith(matrix.name, inputs.platforms) }}
     steps:
       - uses: actions/checkout@v4
+        if: env.WANTED == 'true'
         with:
           ref: ${{ env.TAG }}
       - uses: actions/setup-node@v4
+        if: env.WANTED == 'true'
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+        if: env.WANTED == 'true'
       - run: npm run build
+        if: env.WANTED == 'true'
       - run: npx electron-builder ${{ matrix.flag }} --publish never
+        if: env.WANTED == 'true'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Upload to the release
+        if: env.WANTED == 'true'
         shell: bash
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Stash ${TAG#v}" --notes ""
