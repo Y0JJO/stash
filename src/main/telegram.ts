@@ -21,8 +21,11 @@ import type { TelegramStatus } from '../shared/types'
  * Either way undelivered messages wait (24 h at Telegram, 48 h on the relay) while Stash is closed.
  */
 
-/** Address of the deployed relay (STASH_RELAY_URL overrides it for tests); empty would hide the one-click mode. */
-const RELAY_URL = (process.env.STASH_RELAY_URL ?? 'https://stash-relay.d3s3rt.workers.dev').replace(/\/+$/, '')
+/**
+ * Address of the deployed relay. It is not kept in the source: builds take it from MAIN_VITE_RELAY_URL in
+ * .env.local (git-ignored), tests override it with STASH_RELAY_URL; empty hides the one-click mode.
+ */
+const RELAY_URL = (process.env.STASH_RELAY_URL ?? import.meta.env.MAIN_VITE_RELAY_URL ?? '').replace(/\/+$/, '')
 /** How the relay knows this install: a hash, so the pairing link never exposes the key itself. */
 const cloudId = (key: string) => createHash('sha256').update(key).digest('base64url')
 
