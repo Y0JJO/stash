@@ -1,0 +1,53 @@
+# Builds installers on GitHub's machines and attaches them to an existing release.
+# Started by hand (Actions -> Release -> Run workflow, or `gh workflow run release.yml -f tag=v0.1.1`).
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and upload to (e.g. v0.1.1)
+        required: true
+      platforms:
+        description: What to build
+        type: choice
+        default: mac
+        options: [mac, windows, all]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows, os: windows-latest, flag: --win }
+          - { name: mac-arm64, os: macos-latest, flag: --mac --arm64 }
+          - { name: mac-x64, os: macos-15-intel, flag: --mac --x64 }
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    if: ${{ inputs.platforms == 'all' || startsWith(matrix.name, inputs.platforms) }}
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.flag }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Upload to the release
+        shell: bash
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Stash ${TAG#v}" --notes ""
+          shopt -s nullglob
+          gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml release/*.dmg --clobber

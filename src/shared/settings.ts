@@ -120,13 +120,15 @@ export interface SettingsResult {
   warnings: string[]
 }
 
-/** Where the auto-updater is at. "unsupported" = running from source, not from the installer. */
+/** Where the auto-updater is at. "unsupported" = running from source, not from the installer; "available" = install by hand. */
 export interface UpdateState {
-  status: 'unsupported' | 'idle' | 'checking' | 'none' | 'downloading' | 'ready' | 'error'
+  status: 'unsupported' | 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
   /** Installed version. */
   current: string
   /** Version being downloaded / ready to install. */
   version?: string
   percent?: number
   message?: string
+  /** Download page, when the new version has to be installed by hand (macOS). */
+  url?: string
 }

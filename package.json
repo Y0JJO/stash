@@ -1,7 +1,7 @@
 {
   "name": "stash",
   "productName": "Stash",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Personal asset & reference manager for images and video",
   "private": true,
   "main": "./out/main/index.js",
@@ -12,7 +12,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.json",
     "dist": "electron-vite build && electron-builder --win --publish never",
-    "release": "electron-vite build && electron-builder --win --publish always"
+    "release": "electron-vite build && electron-builder --win --publish always",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",
@@ -53,12 +54,6 @@
       "out/**",
       "resources/**",
       "package.json",
-      "!node_modules/ffprobe-static/bin/darwin/**",
-      "!node_modules/ffprobe-static/bin/linux/**",
-      "!node_modules/ffprobe-static/bin/win32/ia32/**",
-      "!node_modules/onnxruntime-node/bin/**/darwin/**",
-      "!node_modules/onnxruntime-node/bin/**/linux/**",
-      "!node_modules/onnxruntime-node/bin/**/win32/arm64/**",
       "!**/*.map"
     ],
     "asarUnpack": [
@@ -77,7 +72,15 @@
           ]
         }
       ],
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.ico",
+      "files": [
+        "!node_modules/ffprobe-static/bin/darwin/**",
+        "!node_modules/ffprobe-static/bin/linux/**",
+        "!node_modules/ffprobe-static/bin/win32/ia32/**",
+        "!node_modules/onnxruntime-node/bin/**/darwin/**",
+        "!node_modules/onnxruntime-node/bin/**/linux/**",
+        "!node_modules/onnxruntime-node/bin/**/win32/arm64/**"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -100,7 +103,22 @@
         "owner": "Y0JJO",
         "repo": "stash"
       }
-    ]
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "resources/icon-mac.png",
+      "category": "public.app-category.graphics-design",
+      "identity": "-",
+      "artifactName": "Stash-${version}-mac-${arch}.${ext}",
+      "files": [
+        "!node_modules/ffprobe-static/bin/win32/**",
+        "!node_modules/ffprobe-static/bin/linux/**",
+        "!node_modules/onnxruntime-node/bin/**/win32/**",
+        "!node_modules/onnxruntime-node/bin/**/linux/**"
+      ]
+    }
   },
   "author": "Y0JJO",
   "repository": {

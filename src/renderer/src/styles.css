@@ -3503,3 +3503,10 @@ html.no-counts .sidebar .side-count {
 .pm-empty {
   padding: 28px 20px;
 }
+
+/* ---------- macOS: window buttons sit on the left ---------- */
+
+html[data-platform='mac'] .titlebar {
+  padding-left: 78px;
+  padding-right: 0;
+}

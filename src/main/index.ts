@@ -962,9 +962,11 @@ function createWindow(): void {
     show: false,
     backgroundColor: '#141518',
     title: 'Stash',
-    icon: path.join(app.getAppPath(), 'resources', 'icon.ico'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#1a1b1f', symbolColor: '#b9bcc4', height: 44 },
+    // Windows draws its window buttons over the toolbar; macOS keeps its traffic lights on the left.
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 14, y: 14 } }
+      : { icon: path.join(app.getAppPath(), 'resources', 'icon.ico'), titleBarOverlay: { color: '#1a1b1f', symbolColor: '#b9bcc4', height: 44 } }),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -1036,7 +1038,8 @@ app.on('second-instance', (_e, argv) => handleDeepLink(argv))
 
 app.whenReady().then(async () => {
   if (!primary) return
-  Menu.setApplicationMenu(null)
+  // macOS needs an application menu for Cmd+Q / copy / paste; Windows runs without one.
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]) : null)
   protocol.handle('stash', serve)
   registerIpc()
   dragIcon = nativeImage.createFromBuffer(

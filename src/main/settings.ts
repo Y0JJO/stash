@@ -65,7 +65,7 @@ export class SettingsManager {
     this.applyZoom()
     // Keep the native window buttons in step with the theme's panel colour.
     const w = this.deps.win()
-    if (w && !w.isDestroyed()) w.setTitleBarOverlay({ color: TITLEBAR[s.theme] ?? TITLEBAR.dark, symbolColor: '#b9bcc4', height: 44 })
+    if (w && !w.isDestroyed() && process.platform !== 'darwin') w.setTitleBarOverlay({ color: TITLEBAR[s.theme] ?? TITLEBAR.dark, symbolColor: '#b9bcc4', height: 44 })
 
     // Only touch the Windows login item when the user actually flips the switch.
     if (before && before.launchAtLogin !== s.launchAtLogin) {

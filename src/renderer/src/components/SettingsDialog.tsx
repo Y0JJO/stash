@@ -253,6 +253,7 @@ function Updates({ s, set }: PaneProps) {
     idle: 'Проверка ещё не выполнялась',
     checking: 'Проверяю…',
     none: 'У вас последняя версия',
+    available: `Вышла версия ${u.version ?? ''} — скачайте и установите её вручную`,
     downloading: `Загружаю версию ${u.version ?? ''}… ${u.percent ?? 0}%`,
     ready: `Версия ${u.version ?? ''} загружена и установится при перезапуске`,
     error: `Не удалось проверить: ${u.message ?? 'неизвестная ошибка'}`
@@ -266,6 +267,10 @@ function Updates({ s, set }: PaneProps) {
         {u.status === 'ready' ? (
           <button className="primary" onClick={() => api.installUpdate()}>
             Перезапустить и обновить
+          </button>
+        ) : u.status === 'available' && u.url ? (
+          <button className="primary" onClick={() => api.openUrl(u.url!)}>
+            Скачать
           </button>
         ) : (
           <button disabled={u.status === 'unsupported' || u.status === 'checking' || u.status === 'downloading'} onClick={() => api.checkUpdate()}>

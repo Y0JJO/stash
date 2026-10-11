@@ -3,6 +3,8 @@ import App from './App'
 import { initSettings } from './settings'
 import './styles.css'
 
+if (/Macintosh|Mac OS X/.test(navigator.userAgent)) document.documentElement.dataset.platform = 'mac'
+
 // Preferences (theme, scale, behaviour) are loaded before the first paint to avoid a flash.
 initSettings()
   .catch((err) => console.error('settings', err))

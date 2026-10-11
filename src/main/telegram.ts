@@ -59,10 +59,13 @@ type Browser = 'firefox' | 'edge' | 'chrome'
 const BROWSERS: Browser[] = ['firefox', 'edge', 'chrome']
 const needsLogin = (errors: string[]) => /login|log in|cookies|private|rate.?limit|401|403/i.test(errors.join(' '))
 
-/** Where each tool's official Windows build lives. gallery-dl publishes executables on Codeberg, not GitHub. */
+const MAC = process.platform === 'darwin'
+
+/** Where each tool's official build lives. gallery-dl publishes executables on Codeberg, not GitHub. */
 const TOOLS = {
-  'yt-dlp': async () => 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe',
+  'yt-dlp': async () => `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${MAC ? 'yt-dlp_macos' : 'yt-dlp.exe'}`,
   'gallery-dl': async () => {
+    if (MAC) throw new Error('для macOS нет готовой сборки')
     const res = await net.fetch('https://codeberg.org/api/v1/repos/mikf/gallery-dl/releases/latest')
     const rel = (await res.json()) as { assets?: { name: string; browser_download_url: string }[] }
     const exe = rel.assets?.find((a) => a.name === 'gallery-dl.exe')
@@ -73,7 +76,7 @@ const TOOLS = {
 type Tool = keyof typeof TOOLS
 
 const toolsDir = () => path.join(app.getPath('userData'), 'tools')
-const toolPath = (t: Tool) => path.join(toolsDir(), `${t}.exe`)
+const toolPath = (t: Tool) => path.join(toolsDir(), MAC ? t : `${t}.exe`)
 const hasTool = (t: Tool) => fs.existsSync(toolPath(t))
 export const toolsInstalled = () => (Object.keys(TOOLS) as Tool[]).every(hasTool)
 
@@ -623,6 +626,7 @@ async function installTools(onProgress: (done: number, total: number) => void): 
       const tmp = toolPath(tool) + '.part'
       await pipeline(Readable.fromWeb(res.body as never), fs.createWriteStream(tmp))
       await fs.promises.rename(tmp, toolPath(tool))
+      if (MAC) await fs.promises.chmod(toolPath(tool), 0o755)
     } catch (err) {
       errors.push(`${tool}: ${(err as Error).message}`)
     }

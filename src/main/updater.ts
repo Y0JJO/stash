@@ -1,8 +1,23 @@
-import { app, Notification } from 'electron'
+import { app, net, Notification, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateState } from '../shared/settings'
 
 const CHECK_EVERY = 4 * 60 * 60 * 1000
+/** Unsigned macOS builds can't replace themselves, so there Stash only tells the user a new version is out. */
+const MANUAL = process.platform === 'darwin'
+const RELEASES_API = 'https://api.github.com/repos/Y0JJO/stash/releases/latest'
+const RELEASES_PAGE = 'https://github.com/Y0JJO/stash/releases/latest'
+
+/** 1 if a > b, -1 if a < b ("0.10.0" vs "0.9.3"). */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0)
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (d) return d > 0 ? 1 : -1
+  }
+  return 0
+}
 
 /** A build made without a releases feed has no app-update.yml. */
 const explain = (err: Error) => (/app-update\.yml/.test(err.message) ? 'источник обновлений не настроен в этой сборке' : err.message.split('\n')[0])
@@ -17,7 +32,7 @@ export class Updater {
   private notified = false
 
   constructor(private onState: (s: UpdateState) => void) {
-    if (!app.isPackaged) return
+    if (!app.isPackaged || MANUAL) return
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('checking-for-update', () => this.set({ status: 'checking' }))
@@ -55,8 +70,32 @@ export class Updater {
 
   async check(): Promise<UpdateState> {
     if (!app.isPackaged || this.state.status === 'downloading' || this.state.status === 'ready') return this.state
+    if (MANUAL) return this.checkManual()
     try {
       await autoUpdater.checkForUpdates()
+    } catch (err) {
+      this.set({ status: 'error', message: explain(err as Error) })
+    }
+    return this.state
+  }
+
+  /** macOS: look at the latest GitHub release and point the user at the download page. */
+  private async checkManual(): Promise<UpdateState> {
+    this.set({ status: 'checking' })
+    try {
+      const res = await net.fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+      if (!res.ok) throw new Error(`GitHub ответил ${res.status}`)
+      const latest = String(((await res.json()) as { tag_name?: string }).tag_name ?? '').replace(/^v/, '')
+      if (!latest || compareVersions(latest, app.getVersion()) <= 0) this.set({ status: 'none' })
+      else {
+        this.set({ status: 'available', version: latest, url: RELEASES_PAGE })
+        if (!this.notified) {
+          this.notified = true
+          const n = new Notification({ title: `Вышел Stash ${latest}`, body: 'Нажмите, чтобы открыть страницу загрузки.' })
+          n.on('click', () => void shell.openExternal(RELEASES_PAGE))
+          n.show()
+        }
+      }
     } catch (err) {
       this.set({ status: 'error', message: explain(err as Error) })
     }
