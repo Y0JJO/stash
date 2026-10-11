@@ -3510,3 +3510,59 @@ html[data-platform='mac'] .titlebar {
   padding-left: 78px;
   padding-right: 0;
 }
+
+/* ---------- settings: browser extension ---------- */
+
+.set-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.ext-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ext-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5b5e68;
+}
+.ext-status.ok {
+  color: #6fd494;
+}
+.ext-status.ok .ext-dot {
+  background: #5cc882;
+}
+.ext-steps {
+  margin: 8px 0 10px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ext-steps li > span {
+  display: block;
+  margin-bottom: 6px;
+}
+.ext-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ext-path code {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font: 12px ui-monospace, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

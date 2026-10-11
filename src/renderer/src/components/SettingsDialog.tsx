@@ -18,7 +18,7 @@ const SECTIONS: { id: SectionId; label: string; icon: string; group: number; key
   { id: 'notify', label: 'Уведомления', icon: 'bell', group: 2, keywords: 'уведомления расширение дубликаты' },
   { id: 'password', label: 'Пароль', icon: 'lock', group: 2, keywords: 'пароль блокировка' },
   { id: 'autoimport', label: 'Авто-импорт', icon: 'download', group: 2, keywords: 'папка слежение импорт' },
-  { id: 'ai', label: 'AI и интеграции', icon: 'sparkle', group: 3, keywords: 'автотеги telegram плагины' },
+  { id: 'ai', label: 'AI и интеграции', icon: 'sparkle', group: 3, keywords: 'автотеги telegram плагины расширение браузер chrome edge' },
   { id: 'dev', label: 'Разработчик', icon: 'code', group: 4, keywords: 'версия devtools данные' }
 ]
 
@@ -658,6 +658,66 @@ function AutoImport({ s, set, folders }: PaneProps & { folders: Folder[] }) {
   )
 }
 
+/** Guided install of the browser extension: browsers only take an unpacked extension from the user's own hands. */
+function BrowserExtension() {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof api.browserExt>> | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const load = () => api.browserExt().then(setInfo).catch(() => {})
+    load()
+    // Polled so "connected" lights up as soon as the freshly installed extension says hello.
+    const t = window.setInterval(load, 3000)
+    return () => window.clearInterval(t)
+  }, [])
+  if (!info) return null
+
+  return (
+    <Card title="Расширение для браузера">
+      <div className="set-hint">
+        Сохраняет картинки и видео с сайтов прямо в Stash. Подходит для Chrome, Edge, Яндекс Браузера, Opera, Brave и других на Chromium.
+        {info.version && ` Версия ${info.version}.`}
+      </div>
+      <div className={`ext-status${info.seenAt ? ' ok' : ''}`}>
+        <span className="ext-dot" />
+        {info.seenAt ? 'Расширение подключено' : 'Расширение пока не выходило на связь'}
+      </div>
+      <ol className="ext-steps">
+        <li>
+          <span>Откройте страницу расширений в браузере</span>
+          <div className="set-actions">
+            {info.browsers.map((b) => (
+              <button key={b.id} onClick={() => api.openExtensionsPage(b.id)} title={b.page}>
+                {b.name}
+              </button>
+            ))}
+            {!info.browsers.length && <span className="muted">Браузер не найден — откройте вручную адрес chrome://extensions</span>}
+          </div>
+        </li>
+        <li>
+          <span>Включите там «Режим разработчика» (переключатель в углу страницы)</span>
+        </li>
+        <li>
+          <span>Нажмите «Загрузить распакованное расширение» и выберите эту папку</span>
+          <div className="ext-path">
+            <code title={info.dir}>{info.dir}</code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(info.dir)
+                setCopied(true)
+                window.setTimeout(() => setCopied(false), 1500)
+              }}
+            >
+              {copied ? 'Скопировано' : 'Скопировать путь'}
+            </button>
+            <button onClick={() => api.revealBrowserExt()}>Показать папку</button>
+          </div>
+        </li>
+      </ol>
+      <div className="set-hint">После обновления Stash нажмите на карточке расширения в браузере кнопку «Обновить» (круглая стрелка).</div>
+    </Card>
+  )
+}
+
 function Integrations({ onOpenTelegram }: { onOpenTelegram(): void }) {
   const [auto, setAuto] = useState(true)
   useEffect(() => {
@@ -676,6 +736,7 @@ function Integrations({ onOpenTelegram }: { onOpenTelegram(): void }) {
           }}
         />
       </Card>
+      <BrowserExtension />
       <Card title="Интеграции">
         <div className="set-keyrow">
           <span>Telegram-бот: присылайте ссылки и файлы в Stash</span>

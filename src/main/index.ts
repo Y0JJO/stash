@@ -16,6 +16,7 @@ import { videoFps } from './media'
 import { Conversion, trimVideo, type TrimMode } from './convert'
 import { SettingsManager } from './settings'
 import { Updater } from './updater'
+import { browserExtInfo, extensionDir, openExtensionsPage, syncExtension } from './browserExt'
 import type { Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
 import { boardSvg, renderBoardPng } from './boards'
@@ -44,6 +45,8 @@ let tagger: AutoTagger | null = null
 let dragIcon: NativeImage | null = null
 let plugins: PluginHost | null = null
 let updater: Updater | null = null
+/** When the browser extension last talked to Stash (this run). */
+let extensionSeenAt: number | null = null
 let telegram: TelegramBot | null = null
 let settings: SettingsManager | null = null
 /** What the user has selected in the grid — plugins can ask for it. */
@@ -297,6 +300,9 @@ function registerIpc(): void {
   handle('update:state', () => updater?.get() ?? null)
   handle('update:check', () => updater?.check() ?? null)
   handle('update:install', () => updater?.install())
+  handle('browserExt:info', () => ({ ...browserExtInfo(), seenAt: extensionSeenAt }))
+  handle('browserExt:open', (id: string) => openExtensionsPage(id))
+  handle('browserExt:reveal', () => shell.openPath(extensionDir()))
   handle('app:openUserData', () => shell.openPath(app.getPath('userData')))
   handle('app:devtools', () => win?.webContents.openDevTools({ mode: 'detach' }))
   handle('app:relaunch', () => {
@@ -1076,8 +1082,10 @@ app.whenReady().then(async () => {
   updater.setAuto(settings.get().autoUpdate)
 
   // Local endpoint for the browser extension (see /extension).
+  syncExtension()
   startClipperServer({
     ...clipDeps,
+    onExtensionSeen: () => (extensionSeenAt = Date.now()),
     importFile: async (file, folderId, meta) => {
       const r = await clipDeps.importFile(file, folderId, meta)
       if (settings?.get().notifyExtension && !r.duplicate) new Notification({ title: 'Сохранено в Stash', body: meta.name ?? 'Файл из браузера' }).show()

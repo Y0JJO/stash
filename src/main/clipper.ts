@@ -38,6 +38,8 @@ export interface ClipperDeps {
   libraryName(): string | null
   folders(): Folder[]
   importFile(file: string, folderId: string | null, meta: ImportMeta): Promise<ImportResult>
+  /** Called whenever the browser extension talks to Stash. */
+  onExtensionSeen?(): void
 }
 
 const EXT_BY_TYPE: Record<string, string> = {
@@ -277,6 +279,7 @@ export function startClipperServer(deps: ClipperDeps): http.Server {
     }
 
     if (!allowed(req)) return reply(403, { error: 'forbidden' })
+    if (origin) deps.onExtensionSeen?.()
     if (req.method === 'OPTIONS') return reply(204, {})
 
     try {

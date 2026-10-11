@@ -118,7 +118,17 @@
         "!node_modules/onnxruntime-node/bin/**/win32/**",
         "!node_modules/onnxruntime-node/bin/**/linux/**"
       ]
-    }
+    },
+    "extraResources": [
+      {
+        "from": "extension",
+        "to": "extension",
+        "filter": [
+          "**/*",
+          "!README.md"
+        ]
+      }
+    ]
   },
   "author": "Y0JJO",
   "repository": {
