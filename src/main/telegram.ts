@@ -21,8 +21,8 @@ import type { TelegramStatus } from '../shared/types'
  * Either way undelivered messages wait (24 h at Telegram, 48 h on the relay) while Stash is closed.
  */
 
-/** Address of the deployed relay; empty means the one-click mode is not offered. */
-const RELAY_URL = (process.env.STASH_RELAY_URL ?? '').replace(/\/+$/, '')
+/** Address of the deployed relay (STASH_RELAY_URL overrides it for tests); empty would hide the one-click mode. */
+const RELAY_URL = (process.env.STASH_RELAY_URL ?? 'https://stash-relay.d3s3rt.workers.dev').replace(/\/+$/, '')
 /** How the relay knows this install: a hash, so the pairing link never exposes the key itself. */
 const cloudId = (key: string) => createHash('sha256').update(key).digest('base64url')
 
@@ -330,10 +330,12 @@ export class TelegramBot {
         }
       } catch (err) {
         if (!this.running) return
-        const message = (err as Error).message
+        // The bot was handed to the relay: Telegram delivers to its webhook and refuses getUpdates.
+        const onRelay = /webhook is active/i.test((err as Error).message)
+        const message = onRelay ? 'этот бот теперь подключён к общему серверу. Нажмите «Отключить», затем «Привязать Telegram».' : (err as Error).message
         this.setStatus({ state: 'error', message })
-        // A rejected token won't fix itself; anything else (no internet, proxy hiccup) is retried with backoff.
-        if (/токен/.test(message)) return this.stop()
+        // A rejected token or a webhook conflict won't fix itself; anything else (no internet, proxy hiccup) is retried with backoff.
+        if (onRelay || /токен/.test(message)) return this.stop()
         await new Promise((r) => setTimeout(r, delay))
         delay = Math.min(delay * 2, 60_000)
       }

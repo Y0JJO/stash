@@ -15,7 +15,7 @@ const TABS: { id: Tab; label: string }[] = [
 const KIND_LABEL: Record<PluginInfo['kind'], string> = { window: 'Инструмент', service: 'Фоновый', module: 'Модуль' }
 
 /**
- * Extensions (.stashplugin) and the plugins their adapters bring in: run, stop, switch off, inspect, remove,
+ * Extensions (.stashplugin) and the plugins they provide: run, stop, switch off, inspect, remove,
  * install from a file.
  */
 export function PluginManagerDialog({ onClose }: { onClose(): void }) {
@@ -35,7 +35,7 @@ export function PluginManagerDialog({ onClose }: { onClose(): void }) {
   const removeExt = async (x: ExtensionInfo) => {
     if (await api.confirm(`Удалить расширение «${x.name}»?`, 'Плагины, которые оно запускает, останутся на диске, но перестанут работать.', 'Удалить')) api.uninstallExtension(x.id)
   }
-  // Third-party formats some installed adapter can read (everything except Stash's own).
+  // Extra file formats installed extensions can read (everything except Stash's own).
   const foreign = formats.filter((f) => f !== 'stashplugin')
 
   useEffect(() => {
@@ -102,27 +102,28 @@ export function PluginManagerDialog({ onClose }: { onClose(): void }) {
           </button>
         </div>
 
-        <div className="pm-tools">
-          <div className="pm-search">
-            <Icon name="search" size={15} />
-            <input autoFocus value={q} placeholder="Поиск по плагинам…" onChange={(e) => setQ(e.target.value)} />
+        {foreign.length > 0 && (
+          <div className="pm-tools">
+            <div className="pm-search">
+              <Icon name="search" size={15} />
+              <input autoFocus value={q} placeholder="Поиск по плагинам…" onChange={(e) => setQ(e.target.value)} />
+            </div>
+            <div className="pm-tabs">
+              {TABS.map((t) => (
+                <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+                  {t.label}
+                  {list && t.id !== 'all' ? ` ${list.filter((p) => p.kind === t.id).length}` : ''}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="pm-tabs">
-            {TABS.map((t) => (
-              <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-                {t.label}
-                {list && t.id !== 'all' ? ` ${list.filter((p) => p.kind === t.id).length}` : ''}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         <div className="pm-list">
           <div className="pm-section">Расширения Stash</div>
           {!exts.length && (
             <div className="pm-note">
-              Расширений нет. Stash сам не читает плагины других программ — для этого нужен адаптер: установите файл .stashplugin кнопкой
-              «Установить из файла…».
+              Расширений пока нет. Чтобы добавить, нажмите «Установить из файла…» и выберите файл .stashplugin.
             </div>
           )}
           {exts.map((x) => (
@@ -155,14 +156,10 @@ export function PluginManagerDialog({ onClose }: { onClose(): void }) {
             </div>
           ))}
 
-          <div className="pm-section">Плагины{foreign.length > 0 && ` (${foreign.map((f) => `.${f}`).join(', ')})`}</div>
-          {list && !shown.length && (
+          {foreign.length > 0 && <div className="pm-section">Плагины ({foreign.map((f) => `.${f}`).join(', ')})</div>}
+          {foreign.length > 0 && list && !shown.length && (
             <div className="pm-empty">
-              {list.length
-                ? 'Ничего не найдено'
-                : foreign.length
-                  ? 'Плагинов пока нет. Нажмите «Установить из файла…» или перетащите файл плагина в окно Stash.'
-                  : 'Здесь появятся плагины, которые умеют читать установленные расширения-адаптеры.'}
+              {list.length ? 'Ничего не найдено' : 'Плагинов пока нет. Нажмите «Установить из файла…» или перетащите файл плагина в окно Stash.'}
             </div>
           )}
           {shown.map((p) => (

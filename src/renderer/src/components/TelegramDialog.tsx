@@ -156,10 +156,8 @@ export function TelegramDialog({ folders, onClose }: { folders: Folder[]; onClos
               ))}
             </select>
 
-            <div className="insp-label">Ссылки на посты (Instagram, Pinterest, TikTok, YouTube…)</div>
             {status.toolsInstalled ? (
               <>
-                <div className="muted dialog-note">Скачиваются через gallery-dl и yt-dlp, включая все фото карусели.</div>
                 <div className="insp-label">Вход на сайты брать из браузера</div>
                 <select value={status.cookiesFrom ?? 'none'} onChange={(e) => api.telegramUpdate({ cookiesFrom: e.target.value as TelegramStatus['cookiesFrom'] })}>
                   <option value="none">Не использовать</option>
@@ -171,6 +169,7 @@ export function TelegramDialog({ folders, onClose }: { folders: Folder[]; onClos
               </>
             ) : (
               <>
+                <div className="insp-label">Ссылки на посты (Instagram, Pinterest, TikTok, YouTube…)</div>
                 <div className="muted dialog-note">
                   Для карусели и видео нужны бесплатные утилиты gallery-dl и yt-dlp (~40 МБ, с их официальных страниц на GitHub). Бот скачает их сам при
                   первой ссылке, или можно сделать это сейчас.

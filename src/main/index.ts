@@ -1097,7 +1097,7 @@ app.whenReady().then(async () => {
   })
   telegram.start()
 
-  // Extensions (see src/main/pluginHost.ts); adapters for other programs' plugins are extensions too.
+  // Extensions (see src/main/pluginHost.ts).
   plugins = new PluginHost(
     {
       lib: () => lib,

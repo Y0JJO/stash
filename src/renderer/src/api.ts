@@ -55,7 +55,7 @@ export interface StoryboardOptions {
   parentFolderId: string | null
 }
 
-/** A Stash extension (.stashplugin), e.g. an adapter for another program's plugins. */
+/** A Stash extension (.stashplugin). */
 export interface ExtensionInfo {
   id: string
   name: string

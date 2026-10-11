@@ -125,7 +125,19 @@ export default {
 
       // One-time: point the bot's webhook at this worker. Idempotent, so it needs no protection.
       if (path === '/setup') {
-        await tg(env, 'setWebhook', { url: `${url.origin}/webhook`, secret_token: await webhookSecret(env), allowed_updates: ['message'] })
+        const hook = { url: `${url.origin}/webhook`, secret_token: await webhookSecret(env), allowed_updates: ['message'] }
+        try {
+          await tg(env, 'setWebhook', hook)
+        } catch (err) {
+          // Telegram's own resolver sometimes can't find a fresh workers.dev name; hand it the address instead.
+          if (!/resolve host/i.test((err as Error).message)) throw err
+          const dns = await fetch(`https://cloudflare-dns.com/dns-query?name=${url.hostname}&type=A`, { headers: { Accept: 'application/dns-json' } })
+          const ip = ((await dns.json()) as { Answer?: { type: number; data: string }[] }).Answer?.find((a) => a.type === 1)?.data
+          if (!ip) throw err
+          // setWebhook is rate-limited to about one call a second.
+          await new Promise((r) => setTimeout(r, 1500))
+          await tg(env, 'setWebhook', { ...hook, ip_address: ip })
+        }
         return new Response(`Готово: бот @${await getBotName(env)} подключён к ${url.origin}`)
       }
 

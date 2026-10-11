@@ -3,8 +3,7 @@
  *
  * An extension is a folder (installed from a .stashplugin zip) with a plugin.json and a CommonJS entry that
  * runs in the main process: `exports.activate = (host) => ({ deactivate() {} })`.
- * Extensions can register "providers" — adapters that install and run plugins made for other programs.
- * Stash itself knows nothing about those formats.
+ * Extensions can register "providers" that install and run plugins in formats of their own.
  */
 import { app, shell, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
@@ -50,7 +49,7 @@ export interface HostContext {
   services: { handleClip: typeof handleClip; kindOf: typeof kindOf; makeThumb: typeof makeThumb; probe: typeof probe }
 }
 
-/** An adapter for third-party plugins, registered by an extension. */
+/** A source of plugins in some extra format, registered by an extension. */
 export interface PluginProvider {
   id: string
   label: string
@@ -250,7 +249,7 @@ export class PluginHost {
     void shell.openPath(this.dir)
   }
 
-  // ----- provider plugins (everything below just routes to the adapters) -----
+  // ----- provider plugins (everything below just routes to the providers) -----
 
   private providers(): PluginProvider[] {
     return [...this.active.values()].flatMap((a) => a.providers)
@@ -260,7 +259,7 @@ export class PluginHost {
     return this.providers().find((p) => p.list().some((x) => x.id === id))
   }
 
-  /** File extensions Stash can currently install: its own plus whatever the adapters add. */
+  /** File extensions Stash can currently install: its own plus whatever the providers add. */
   formats(): string[] {
     return [EXTENSION_EXT, ...this.providers().flatMap((p) => p.extensions)]
   }
@@ -269,12 +268,12 @@ export class PluginHost {
     return this.providers().flatMap((p) => p.list())
   }
 
-  /** Installs an extension or, through a matching adapter, a third-party plugin. Returns its name. */
+  /** Installs an extension or, through a matching provider, a plugin. Returns its name. */
   async install(file: string): Promise<string> {
     const ext = path.extname(file).slice(1).toLowerCase()
     if (ext === EXTENSION_EXT) return (await this.installExtension(file)).name
     const provider = this.providers().find((p) => p.extensions.includes(ext))
-    if (!provider) throw new Error(`Нет расширения, которое умеет читать файлы .${ext}. Установите подходящий адаптер (.${EXTENSION_EXT}).`)
+    if (!provider) throw new Error(`Stash не умеет устанавливать файлы .${ext}`)
     return (await provider.install(file)).name
   }
 
@@ -286,7 +285,7 @@ export class PluginHost {
   reveal = (id: string): void => this.owner(id)?.reveal(id)
   setEnabled = (id: string, on: boolean): void => this.owner(id)?.setEnabled(id, on)
 
-  /** Opens the folder with third-party plugins, or the extensions folder when no adapter is installed. */
+  /** Opens the providers' plugin folder, or the extensions folder when there is none. */
   revealPlugins(): void {
     void shell.openPath(this.providers()[0]?.dir ?? this.dir)
   }
