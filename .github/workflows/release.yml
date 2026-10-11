@@ -57,4 +57,5 @@ jobs:
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Stash ${TAG#v}" --notes ""
           shopt -s nullglob
-          gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml release/*.dmg --clobber
+          # Globs only (latest.ym[l] too), so files a platform does not produce simply drop out of the list.
+          gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.ym[l] release/*.dmg --clobber
