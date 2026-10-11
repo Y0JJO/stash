@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        margin: 0;
+        width: 300px;
+        padding: 6px;
+        background: #1c1d22;
+        color: #e3e4e8;
+        font: 13px/1.4 system-ui, 'Segoe UI', sans-serif;
+      }
+      .head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px 4px;
+        font-weight: 700;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4b4e57;
+      }
+      .dot.on {
+        background: #4ade80;
+      }
+      .status {
+        color: #8b8e98;
+        font-size: 12px;
+        padding: 0 10px 6px 26px;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #2c2e35;
+        margin: 5px 4px;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 7px 10px;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .item:hover:not(:disabled) {
+        background: #2a2c34;
+      }
+      .item:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .ic {
+        width: 18px;
+        text-align: center;
+        color: #a3a7b3;
+      }
+      .key {
+        margin-left: auto;
+        color: #6f7380;
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 10px;
+      }
+      .row span.grow {
+        flex: 1;
+      }
+      select {
+        max-width: 150px;
+        font: inherit;
+        color: inherit;
+        background: #141518;
+        border: 1px solid #2c2e35;
+        border-radius: 6px;
+        padding: 3px 6px;
+      }
+      .switch {
+        position: relative;
+        width: 28px;
+        height: 16px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+      }
+      .switch i {
+        position: absolute;
+        inset: 0;
+        border-radius: 10px;
+        background: #3a3c45;
+        cursor: pointer;
+      }
+      .switch i::after {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #fff;
+        transition: transform 0.15s;
+      }
+      .switch input:checked + i {
+        background: #6b7cff;
+      }
+      .switch input:checked + i::after {
+        transform: translateX(12px);
+      }
+      .foot {
+        color: #6f7380;
+        font-size: 11px;
+        padding: 4px 10px 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="head"><span class="dot" id="dot"></span>Stash</div>
+    <div class="status" id="status">Проверяю соединение…</div>
+    <hr />
+    <button class="item" data-action="batch"><span class="ic">▦</span>Сохранить картинки страницы<span class="key">Alt+1</span></button>
+    <button class="item" data-action="bookmark"><span class="ic">🔗</span>Сохранить закладку</button>
+    <hr />
+    <button class="item" data-action="area"><span class="ic">⌗</span>Захват области<span class="key">Alt+2</span></button>
+    <button class="item" data-action="visible"><span class="ic">▭</span>Видимая область<span class="key">Alt+3</span></button>
+    <button class="item" data-action="page"><span class="ic">⇩</span>Вся страница<span class="key">Alt+4</span></button>
+    <hr />
+    <div class="row">
+      <span class="ic">▣</span><span class="grow">Папка</span>
+      <select id="folder"><option value="">Без папки</option></select>
+    </div>
+    <label class="row">
+      <span class="ic">⇲</span><span class="grow">Панель при перетаскивании</span>
+      <span class="switch"><input type="checkbox" id="dragPanel" /><i></i></span>
+    </label>
+    <label class="row">
+      <span class="ic">◉</span><span class="grow">Кнопка при наведении</span>
+      <span class="switch"><input type="checkbox" id="hoverButton" /><i></i></span>
+    </label>
+    <div class="foot">Правый клик по картинке или видео → «Сохранить в Stash»</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "stash-relay",
+  "private": true,
+  "description": "Relay between the shared Stash Telegram bot and each user's Stash app (Cloudflare Worker)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "token": "wrangler secret put BOT_TOKEN"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

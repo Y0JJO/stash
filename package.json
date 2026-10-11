@@ -1,0 +1,110 @@
+{
+  "name": "stash",
+  "productName": "Stash",
+  "version": "0.1.0",
+  "description": "Personal asset & reference manager for images and video",
+  "private": true,
+  "main": "./out/main/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron-vite dev --watch",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.json",
+    "dist": "electron-vite build && electron-builder --win --publish never",
+    "release": "electron-vite build && electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "electron-updater": "^6.8.9",
+    "fflate": "^0.8.3",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "i18next": "^26.4.2",
+    "lucide": "^1.55.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "electron@44.5.1": true,
+    "ffmpeg-static@5.3.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  },
+  "build": {
+    "appId": "app.stash.desktop",
+    "productName": "Stash",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**",
+      "resources/**",
+      "package.json",
+      "!node_modules/ffprobe-static/bin/darwin/**",
+      "!node_modules/ffprobe-static/bin/linux/**",
+      "!node_modules/ffprobe-static/bin/win32/ia32/**",
+      "!node_modules/onnxruntime-node/bin/**/darwin/**",
+      "!node_modules/onnxruntime-node/bin/**/linux/**",
+      "!node_modules/onnxruntime-node/bin/**/win32/arm64/**",
+      "!**/*.map"
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**",
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/**",
+      "node_modules/onnxruntime-node/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Stash",
+      "artifactName": "Stash-Setup-${version}.${ext}"
+    },
+    "protocols": [
+      {
+        "name": "Stash",
+        "schemes": [
+          "stash-app"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Y0JJO",
+        "repo": "stash"
+      }
+    ]
+  },
+  "author": "Y0JJO",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Y0JJO/stash.git"
+  }
+}

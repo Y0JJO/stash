@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "Stash Clipper",
+  "version": "0.2.0",
+  "description": "Сохраняет картинки и видео с любых сайтов в Stash в один клик.",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "webRequest",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js",
+        "drag.js",
+        "batch.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "commands": {
+    "batch": {
+      "suggested_key": {
+        "default": "Alt+1"
+      },
+      "description": "Сохранить картинки страницы"
+    },
+    "area": {
+      "suggested_key": {
+        "default": "Alt+2"
+      },
+      "description": "Захват области"
+    },
+    "visible": {
+      "suggested_key": {
+        "default": "Alt+3"
+      },
+      "description": "Видимая область"
+    },
+    "page": {
+      "suggested_key": {
+        "default": "Alt+4"
+      },
+      "description": "Вся страница"
+    },
+    "bookmark": {
+      "description": "Сохранить закладку"
+    }
+  }
+}
