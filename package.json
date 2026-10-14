@@ -1,7 +1,7 @@
 {
   "name": "stash",
-  "productName": "Stash",
-  "version": "0.1.1",
+  "productName": "D3S3RT",
+  "version": "0.1.2",
   "description": "Personal asset & reference manager for images and video",
   "private": true,
   "main": "./out/main/index.js",
@@ -46,7 +46,7 @@
   },
   "build": {
     "appId": "app.stash.desktop",
-    "productName": "Stash",
+    "productName": "D3S3RT",
     "directories": {
       "output": "release"
     },
@@ -86,12 +86,12 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Stash",
-      "artifactName": "Stash-Setup-${version}.${ext}"
+      "shortcutName": "D3S3RT",
+      "artifactName": "D3S3RT-Setup-${version}.${ext}"
     },
     "protocols": [
       {
-        "name": "Stash",
+        "name": "D3S3RT",
         "schemes": [
           "stash-app"
         ]
@@ -111,7 +111,7 @@
       "icon": "resources/icon-mac.png",
       "category": "public.app-category.graphics-design",
       "identity": "-",
-      "artifactName": "Stash-${version}-mac-${arch}.${ext}",
+      "artifactName": "D3S3RT-${version}-mac-${arch}.${ext}",
       "files": [
         "!node_modules/ffprobe-static/bin/win32/**",
         "!node_modules/ffprobe-static/bin/linux/**",

@@ -130,7 +130,7 @@ export function PinterestPanel({ item, folderId, folderName, onClose }: Props) {
                     <div className="pin-actions" onClick={(e) => e.stopPropagation()}>
                       <button className={`pin-save ${st ?? ''}`} disabled={st === 'saving' || st === 'saved'} onClick={() => save([r])}>
                         <Icon name={st === 'saved' ? 'check' : st === 'error' ? 'retry' : st === 'saving' ? 'loader' : 'plus'} size={14} />
-                        {st === 'saved' ? 'В Stash' : st === 'saving' ? 'Сохраняю' : st === 'error' ? 'Ошибка' : 'В Stash'}
+                        {st === 'saved' ? 'В D3S3RT' : st === 'saving' ? 'Сохраняю' : st === 'error' ? 'Ошибка' : 'В D3S3RT'}
                       </button>
                       <button className="pin-open" title="Открыть пин в браузере" onClick={() => api.openUrl(r.pinUrl)}>
                         <Icon name="external" size={14} />
@@ -160,7 +160,7 @@ export function PinterestPanel({ item, folderId, folderName, onClose }: Props) {
             </span>
             <button className="primary" disabled={saved[preview.id] === 'saved'} onClick={() => save([preview])}>
               <Icon name={saved[preview.id] === 'saved' ? 'check' : 'plus'} size={14} />
-              {saved[preview.id] === 'saved' ? 'Сохранено' : 'В Stash'}
+              {saved[preview.id] === 'saved' ? 'Сохранено' : 'В D3S3RT'}
             </button>
             <button onClick={() => api.openUrl(preview.pinUrl)}>
               Открыть пин

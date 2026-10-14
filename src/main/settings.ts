@@ -92,7 +92,7 @@ export class SettingsManager {
       if (w.isMinimized()) w.restore()
       w.show()
       w.focus()
-    }, 'показать Stash')
+    }, 'показать D3S3RT')
 
     // Auto-import
     this.watcher?.close()

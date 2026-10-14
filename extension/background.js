@@ -9,12 +9,12 @@ const MAX_STREAMS = 40
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'stash-save', title: 'Сохранить в Stash', contexts: ['image', 'video', 'page', 'link', 'frame'] })
+    chrome.contextMenus.create({ id: 'stash-save', title: 'Сохранить в D3S3RT', contexts: ['image', 'video', 'page', 'link', 'frame'] })
     chrome.contextMenus.create({ id: 'stash-sep', type: 'separator', contexts: ['page', 'image', 'video', 'link', 'frame'] })
     chrome.contextMenus.create({ id: 'stash-batch', title: 'Сохранить картинки страницы…', contexts: ['page', 'image', 'link', 'frame'] })
-    chrome.contextMenus.create({ id: 'stash-area', title: 'Захват области → Stash', contexts: ['page', 'image', 'video', 'link', 'frame'] })
-    chrome.contextMenus.create({ id: 'stash-shot', title: 'Видимая область → Stash', contexts: ['page', 'image', 'video', 'link', 'frame'] })
-    chrome.contextMenus.create({ id: 'stash-page', title: 'Вся страница → Stash', contexts: ['page', 'image', 'video', 'link', 'frame'] })
+    chrome.contextMenus.create({ id: 'stash-area', title: 'Захват области → D3S3RT', contexts: ['page', 'image', 'video', 'link', 'frame'] })
+    chrome.contextMenus.create({ id: 'stash-shot', title: 'Видимая область → D3S3RT', contexts: ['page', 'image', 'video', 'link', 'frame'] })
+    chrome.contextMenus.create({ id: 'stash-page', title: 'Вся страница → D3S3RT', contexts: ['page', 'image', 'video', 'link', 'frame'] })
   })
 })
 
@@ -175,13 +175,13 @@ async function payload(tab, media) {
   }
 }
 
-const errorText = (err) => (err instanceof TypeError ? 'Stash не запущен' : err.message)
+const errorText = (err) => (err instanceof TypeError ? 'D3S3RT не запущен' : err.message)
 
 async function save(tab, media) {
   toast(tab.id, 'busy', media.kind === 'video' ? 'Сохраняю видео…' : 'Сохраняю…')
   try {
     const r = await post(await payload(tab, media))
-    toast(tab.id, 'ok', r.duplicate ? 'Уже есть в Stash' : 'Сохранено в Stash')
+    toast(tab.id, 'ok', r.duplicate ? 'Уже есть в D3S3RT' : 'Сохранено в D3S3RT')
   } catch (err) {
     toast(tab.id, 'error', errorText(err))
   }
@@ -207,7 +207,7 @@ async function saveBatch(tab, list) {
   }
   toast(tab.id, 'busy', `Сохраняю 0 / ${list.length}`)
   await Promise.all([worker(), worker(), worker()])
-  if (offline) return toast(tab.id, 'error', 'Stash не запущен')
+  if (offline) return toast(tab.id, 'error', 'D3S3RT не запущен')
   toast(tab.id, failed ? 'error' : 'ok', failed ? `Сохранено ${done - failed}, ошибок: ${failed}` : `Сохранено: ${done}`)
 }
 

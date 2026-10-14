@@ -225,7 +225,7 @@ export class TelegramBot {
    * returns the t.me link that, once the user presses Start there, binds their account to this Stash.
    */
   async cloudPair(): Promise<string> {
-    if (!RELAY_URL) throw new Error('Общий бот Stash ещё не настроен.')
+    if (!RELAY_URL) throw new Error('Общий бот D3S3RT ещё не настроен.')
     const { cookiesFrom, folderId, cloudKey } = this.deps.config()
     if (!this.cloudKey) {
       this.deps.save({ cookiesFrom, folderId, cloudKey: decodeToken(cloudKey) ? cloudKey : encodeToken(randomBytes(32).toString('base64url')) })
@@ -238,7 +238,7 @@ export class TelegramBot {
       if (s.state === 'online' && s.ownerName) throw new Error(`Уже привязано к ${s.ownerName}.`)
       await new Promise((r) => setTimeout(r, 250))
     }
-    throw new Error('Сервер Stash не отвечает. Проверьте интернет и попробуйте ещё раз.')
+    throw new Error('Сервер D3S3RT не отвечает. Проверьте интернет и попробуйте ещё раз.')
   }
 
   /** Tells the relay to forget this install, so the bot stops forwarding to it. */
@@ -413,9 +413,9 @@ export class TelegramBot {
         this.pairCode = null
         this.deps.save({ ...cfg, ownerId: from.id, ownerName: name })
         this.setStatus(this.status)
-        this.reply(m.chat.id, '✓ Готово, бот привязан к Stash.\n\nПрисылайте фото, видео, файлы, альбомы или ссылки на посты — всё попадёт в библиотеку.\nХэштеги в подписи станут тегами: <code>#свет #референс</code>')
+        this.reply(m.chat.id, '✓ Готово, бот привязан к D3S3RT.\n\nПрисылайте фото, видео, файлы, альбомы или ссылки на посты — всё попадёт в библиотеку.\nХэштеги в подписи станут тегами: <code>#свет #референс</code>')
       } else {
-        this.reply(m.chat.id, 'Чтобы привязать бота, отправьте код из окна «Telegram-бот» в Stash.')
+        this.reply(m.chat.id, 'Чтобы привязать бота, отправьте код из окна «Telegram-бот» в D3S3RT.')
       }
       return
     }
@@ -427,12 +427,12 @@ export class TelegramBot {
   private async handleOwner(m: TgMessage): Promise<void> {
     const text = (m.text ?? m.caption ?? '').trim()
     if (/^\/(start|help)\b/.test(text)) {
-      this.reply(m.chat.id, 'Присылайте фото, видео, файлы, альбомы или ссылки на посты — всё попадёт в Stash.\nХэштеги в подписи станут тегами.\n\nФайлы, отправленные напрямую, — до 20 МБ (ограничение Telegram). Для большого видео пришлите ссылку.')
+      this.reply(m.chat.id, 'Присылайте фото, видео, файлы, альбомы или ссылки на посты — всё попадёт в D3S3RT.\nХэштеги в подписи станут тегами.\n\nФайлы, отправленные напрямую, — до 20 МБ (ограничение Telegram). Для большого видео пришлите ссылку.')
       return
     }
 
     if (!this.deps.libraryName()) {
-      this.reply(m.chat.id, '⚠ В Stash не открыта библиотека.', m.message_id)
+      this.reply(m.chat.id, '⚠ В D3S3RT не открыта библиотека.', m.message_id)
       return
     }
 

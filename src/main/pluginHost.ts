@@ -213,7 +213,7 @@ export class PluginHost {
   async installExtension(file: string): Promise<ExtensionInfo> {
     const files = unzipSync(new Uint8Array(await fs.promises.readFile(file)))
     const entry = Object.keys(files).find((k) => /(^|\/)plugin\.json$/.test(k) && k.split('/').length <= 2)
-    if (!entry) throw new Error('В архиве нет plugin.json — это не расширение Stash')
+    if (!entry) throw new Error('В архиве нет plugin.json — это не расширение D3S3RT')
     const prefix = entry.slice(0, -'plugin.json'.length)
     const manifest = JSON.parse(new TextDecoder().decode(files[entry]).replace(/^﻿/, '')) as ExtensionManifest
     if (!manifest.id) throw new Error('В plugin.json нет id')
@@ -273,7 +273,7 @@ export class PluginHost {
     const ext = path.extname(file).slice(1).toLowerCase()
     if (ext === EXTENSION_EXT) return (await this.installExtension(file)).name
     const provider = this.providers().find((p) => p.extensions.includes(ext))
-    if (!provider) throw new Error(`Stash не умеет устанавливать файлы .${ext}`)
+    if (!provider) throw new Error(`D3S3RT не умеет устанавливать файлы .${ext}`)
     return (await provider.install(file)).name
   }
 

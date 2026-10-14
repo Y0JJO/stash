@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Stash Clipper",
-  "version": "0.2.0",
-  "description": "Сохраняет картинки и видео с любых сайтов в Stash в один клик.",
+  "name": "D3S3RT Clipper",
+  "version": "0.2.1",
+  "description": "Сохраняет картинки и видео с любых сайтов в D3S3RT в один клик.",
   "permissions": [
     "contextMenus",
     "storage",

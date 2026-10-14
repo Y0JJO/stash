@@ -116,7 +116,7 @@
       padding: 7px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.35); backdrop-filter: blur(6px);
     }
     .hover-btn:hover { background: var(--accent); border-color: var(--accent); }
-    .logo { width: 10px; height: 10px; border-radius: 3px; background: linear-gradient(135deg,#8f9bff,#d48bff); flex: none; }
+    .logo { width: 10px; height: 10px; border-radius: 3px; background: linear-gradient(135deg,#ffc35c, #e0577f); flex: none; }
     .toast {
       position: fixed; right: 20px; bottom: 20px; display: none; align-items: center; gap: 8px; pointer-events: none;
       font-size: 13px; line-height: 1.3; color: var(--text); max-width: 360px;
@@ -136,7 +136,7 @@
   root.appendChild(style)
   // ShadowRoot has no insertAdjacentHTML, so build the nodes in a template.
   const tpl = document.createElement('template')
-  tpl.innerHTML = `<button class="hover-btn" title="Сохранить в Stash"><i class="logo"></i>Stash</button>
+  tpl.innerHTML = `<button class="hover-btn" title="Сохранить в D3S3RT"><i class="logo"></i>D3S3RT</button>
      <div class="toast"><b></b><span></span></div>`
   root.appendChild(tpl.content)
   const button = root.querySelector('.hover-btn')

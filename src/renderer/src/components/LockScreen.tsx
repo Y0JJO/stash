@@ -22,7 +22,7 @@ export function LockScreen({ onUnlock }: { onUnlock(): void }) {
         <div className="lock-icon">
           <Icon name="lock" size={26} />
         </div>
-        <div className="insp-title">Stash заблокирован</div>
+        <div className="insp-title">D3S3RT заблокирован</div>
         <input
           type="password"
           autoFocus

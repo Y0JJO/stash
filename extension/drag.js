@@ -50,7 +50,7 @@
       .map((f) => ({ id: f.id, label: pathOf(f, map) }))
       .sort((a, b) => a.label.localeCompare(b.label))
     panel.innerHTML = `
-      <div class="drag-head"><i class="logo"></i>Stash</div>
+      <div class="drag-head"><i class="logo"></i>D3S3RT</div>
       <div class="drag-zone" data-folder="">Отпустите здесь,<br>чтобы сохранить без папки</div>
       ${rows.length ? '<div class="drag-label">Или в папку</div>' : ''}
       <div class="drag-list">${rows.map((r) => `<div class="drag-row" data-folder="${r.id}"><span class="ic">▣</span><span></span></div>`).join('')}</div>`
@@ -69,7 +69,7 @@
       if (!el) return
       dragged = el
       await loadFolders()
-      if (folders === null || !dragged) return // Stash isn't running — don't get in the way
+      if (folders === null || !dragged) return // D3S3RT isn't running — don't get in the way
       render()
       panel.style.display = 'flex'
     },

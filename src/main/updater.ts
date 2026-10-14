@@ -43,7 +43,7 @@ export class Updater {
       this.set({ status: 'ready', version: i.version })
       if (this.notified) return
       this.notified = true
-      const n = new Notification({ title: `Stash ${i.version} готов к установке`, body: 'Нажмите, чтобы перезапустить и обновить. Иначе обновление установится при следующем запуске.' })
+      const n = new Notification({ title: `D3S3RT ${i.version} готов к установке`, body: 'Нажмите, чтобы перезапустить и обновить. Иначе обновление установится при следующем запуске.' })
       n.on('click', () => this.install())
       n.show()
     })
@@ -91,7 +91,7 @@ export class Updater {
         this.set({ status: 'available', version: latest, url: RELEASES_PAGE })
         if (!this.notified) {
           this.notified = true
-          const n = new Notification({ title: `Вышел Stash ${latest}`, body: 'Нажмите, чтобы открыть страницу загрузки.' })
+          const n = new Notification({ title: `Вышел D3S3RT ${latest}`, body: 'Нажмите, чтобы открыть страницу загрузки.' })
           n.on('click', () => void shell.openExternal(RELEASES_PAGE))
           n.show()
         }

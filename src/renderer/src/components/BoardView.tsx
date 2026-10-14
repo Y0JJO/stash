@@ -996,7 +996,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
           {selected.size > 0 && ` | ${selected.size} выбрано`}
         </span>
         <span className="cv-sep v" />
-        <button className={`cv-btn sm${focus ? ' on' : ''}`} onClick={() => onFocus(!focus)} title="Во весь экран (скрыть панели Stash)">
+        <button className={`cv-btn sm${focus ? ' on' : ''}`} onClick={() => onFocus(!focus)} title="Во весь экран (скрыть панели D3S3RT)">
           <Icon name="fullscreen" size={15} />
         </button>
         <button className={`cv-btn sm${preview ? ' on' : ''}`} onClick={() => setPreview((p) => !p)} title="Режим просмотра (Esc — выйти)">

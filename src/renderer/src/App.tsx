@@ -657,7 +657,7 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
           <button className="icon-btn" onClick={() => setShowSettings(true)} title="Настройки (Ctrl+,)">
             <Icon name="settings" size={15} />
           </button>
-          <button className="icon-btn" onClick={() => setShowTelegram(true)} title="Telegram-бот: присылайте файлы и ссылки в Stash">
+          <button className="icon-btn" onClick={() => setShowTelegram(true)} title="Telegram-бот: присылайте файлы и ссылки в D3S3RT">
             <Icon name="telegram" size={15} />
           </button>
           </>

@@ -291,7 +291,7 @@ export function startClipperServer(deps: ClipperDeps): http.Server {
         return reply(200, { folders: deps.libraryName() ? deps.folders() : [] })
       }
       if (req.method === 'POST' && url.pathname === '/api/add') {
-        if (!deps.libraryName()) return reply(409, { error: 'В Stash не открыта библиотека' })
+        if (!deps.libraryName()) return reply(409, { error: 'В D3S3RT не открыта библиотека' })
         const body = JSON.parse(await readBody(req)) as ClipRequest
         const r = await handleClip(body, deps)
         return reply(200, { ok: true, ...r })

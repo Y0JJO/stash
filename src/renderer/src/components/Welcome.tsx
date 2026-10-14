@@ -16,7 +16,7 @@ export function Welcome({ onOpened }: { onOpened(info: LibraryInfo): void }) {
     <div className="welcome">
       <div className="titlebar-drag" />
       <div className="welcome-card">
-        <div className="logo">Stash</div>
+        <div className="logo">D3S3RT</div>
         <p className="muted">Библиотека референсов, картинок и видео. Всё хранится локально в папке библиотеки.</p>
         <div className="welcome-actions">
           <button className="primary" onClick={() => api.createLibrary().then(done)}>

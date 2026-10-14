@@ -90,7 +90,7 @@ export function PasswordDialog({
         {mode === 'set' && (
           <input type="password" placeholder="Повторите пароль" value={pw2} onChange={(e) => setPw2(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
         )}
-        {mode === 'set' && <div className="muted dialog-note">Пароль закрывает просмотр папки в Stash. Сами файлы на диске не шифруются.</div>}
+        {mode === 'set' && <div className="muted dialog-note">Пароль закрывает просмотр папки в D3S3RT. Сами файлы на диске не шифруются.</div>}
         {error && <div className="warn dialog-note">{error}</div>}
         <div className="dialog-actions">
           <button onClick={onClose}>Отмена</button>

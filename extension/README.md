@@ -1,7 +1,7 @@
-# Stash Clipper
+# D3S3RT Clipper
 
 Browser extension (Chrome, Edge, Yandex Browser, Opera, Arc — any Chromium browser) that saves images
-and video from any site into the running Stash app.
+and video from any site into the running D3S3RT app.
 
 ## Install
 
@@ -10,13 +10,13 @@ and video from any site into the running Stash app.
 3. Click **Load unpacked** and select this `extension` folder.
 4. After pulling changes, press the reload icon on the extension card and refresh open tabs.
 
-Stash must be running with a library open — the extension talks to it at `http://127.0.0.1:41597`.
+D3S3RT must be running with a library open — the extension talks to it at `http://127.0.0.1:41597`.
 
 ## Features
 
 | | How |
 |---|---|
-| Save one image / video | Hover → **Stash** button, or right-click → **Сохранить в Stash** |
+| Save one image / video | Hover → **D3S3RT** button, or right-click → **Сохранить в D3S3RT** |
 | Drag & drop | Start dragging any image → a panel slides in → drop on a folder |
 | Batch save | `Alt+1`, popup, or right-click → **Сохранить картинки страницы…**; filter by size / format / domain, pick folder and tags |
 | Auto-collect | In batch save → **Автосбор при прокрутке**; keeps collecting while you scroll, **▶ Листать** scrolls for you (Pinterest boards, feeds) |

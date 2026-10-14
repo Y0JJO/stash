@@ -43,10 +43,17 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Check the relay address is set
+        if: env.WANTED == 'true'
+        shell: bash
+        run: test -n "${{ secrets.MAIN_VITE_RELAY_URL }}" || { echo "Secret MAIN_VITE_RELAY_URL is missing"; exit 1; }
       - run: npm ci
         if: env.WANTED == 'true'
       - run: npm run build
         if: env.WANTED == 'true'
+        env:
+          # Kept out of the source (see src/main/telegram.ts); empty would hide the one-click Telegram mode.
+          MAIN_VITE_RELAY_URL: ${{ secrets.MAIN_VITE_RELAY_URL }}
       - run: npx electron-builder ${{ matrix.flag }} --publish never
         if: env.WANTED == 'true'
         env:

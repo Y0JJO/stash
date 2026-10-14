@@ -32,7 +32,8 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 // Dev hook: STASH_USER_DATA isolates config (recent libraries, window bounds) for test runs.
-if (process.env.STASH_USER_DATA) app.setPath('userData', process.env.STASH_USER_DATA)
+// Otherwise keep the folder from before the rename to D3S3RT, so existing installs keep their libraries and settings.
+app.setPath('userData', process.env.STASH_USER_DATA || path.join(app.getPath('appData'), 'Stash'))
 
 const config = loadConfig()
 // Must be decided before the app is ready.
@@ -117,7 +118,7 @@ const clipDeps: ClipperDeps = {
   libraryName: () => lib?.info.name ?? null,
   folders: () => lib?.folders() ?? [],
   importFile: (file, folderId, meta) => {
-    if (!lib || !importer) throw new Error('В Stash не открыта библиотека')
+    if (!lib || !importer) throw new Error('В D3S3RT не открыта библиотека')
     const l = lib
     const target = folderId && l.folders().some((f) => f.id === folderId) ? folderId : null
     return importer.importFile(file, target, meta)
@@ -196,7 +197,7 @@ function registerIpc(): void {
     const r = await dialog.showOpenDialog(win!, { title: 'Открыть библиотеку', properties: ['openDirectory'] })
     if (r.canceled || !r.filePaths[0]) return null
     if (!Library.isLibrary(r.filePaths[0])) {
-      await dialog.showMessageBox(win!, { type: 'warning', message: 'Эта папка не является библиотекой Stash.' })
+      await dialog.showMessageBox(win!, { type: 'warning', message: 'Эта папка не является библиотекой D3S3RT.' })
       return null
     }
     return openLibrary(r.filePaths[0]).info
@@ -803,11 +804,11 @@ function registerIpc(): void {
   handle('folders:copyToLibrary', async (id: string, target: string | null) => {
     let dir = target
     if (!dir) {
-      const r = await dialog.showOpenDialog(win!, { title: 'Выберите библиотеку Stash', properties: ['openDirectory'] })
+      const r = await dialog.showOpenDialog(win!, { title: 'Выберите библиотеку D3S3RT', properties: ['openDirectory'] })
       if (r.canceled || !r.filePaths[0]) return null
       dir = r.filePaths[0]
     }
-    if (!Library.isLibrary(dir)) throw new Error('Эта папка не является библиотекой Stash')
+    if (!Library.isLibrary(dir)) throw new Error('Эта папка не является библиотекой D3S3RT')
     return copyFolderToLibrary(need(), id, dir)
   })
   /** stash-app://folder/<id> — clicking it (in a chat, notes…) opens Stash right in that folder. */
@@ -935,7 +936,7 @@ async function screenshotToLibrary(folderId: string | null): Promise<boolean> {
       .catch(() => null)
       .finally(() => fs.promises.rm(dir, { recursive: true, force: true }))
     if (s?.shotCopy) await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' }) })])
-    if (s?.shotNotify) new Notification({ title: 'Скриншот сохранён', body: 'Добавлен в библиотеку Stash' }).show()
+    if (s?.shotNotify) new Notification({ title: 'Скриншот сохранён', body: 'Добавлен в библиотеку D3S3RT' }).show()
     return true
   } finally {
     capturing = false
@@ -967,7 +968,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     backgroundColor: '#141518',
-    title: 'Stash',
+    title: 'D3S3RT',
     titleBarStyle: 'hidden',
     // Windows draws its window buttons over the toolbar; macOS keeps its traffic lights on the left.
     ...(process.platform === 'darwin'
@@ -1088,7 +1089,7 @@ app.whenReady().then(async () => {
     onExtensionSeen: () => (extensionSeenAt = Date.now()),
     importFile: async (file, folderId, meta) => {
       const r = await clipDeps.importFile(file, folderId, meta)
-      if (settings?.get().notifyExtension && !r.duplicate) new Notification({ title: 'Сохранено в Stash', body: meta.name ?? 'Файл из браузера' }).show()
+      if (settings?.get().notifyExtension && !r.duplicate) new Notification({ title: 'Сохранено в D3S3RT', body: meta.name ?? 'Файл из браузера' }).show()
       return r
     }
   })

@@ -224,10 +224,10 @@ function General({ s, set }: PaneProps) {
         <Check label="Показывать счётчики в сайдбаре" value={s.sidebarCounts} onChange={(v) => set({ sidebarCounts: v })} />
       </Card>
       <Card title="Запуск">
-        <Check label="Запускать Stash при входе в Windows" value={s.launchAtLogin} onChange={(v) => set({ launchAtLogin: v })} />
+        <Check label="Запускать D3S3RT при входе в Windows" value={s.launchAtLogin} onChange={(v) => set({ launchAtLogin: v })} />
         <Check
           label="Аппаратное ускорение (GPU)"
-          hint="Изменение вступит в силу после перезапуска Stash"
+          hint="Изменение вступит в силу после перезапуска D3S3RT"
           value={s.gpu}
           onChange={(v) => set({ gpu: v })}
         />
@@ -262,7 +262,7 @@ function Updates({ s, set }: PaneProps) {
     <Card title="Обновления">
       <div className="set-keyrow">
         <span>
-          Stash {u.current} · {text[u.status]}
+          D3S3RT {u.current} · {text[u.status]}
         </span>
         {u.status === 'ready' ? (
           <button className="primary" onClick={() => api.installUpdate()}>
@@ -329,7 +329,7 @@ function Controls({ s, set }: PaneProps) {
           label="Двойной клик по файлу"
           value={s.itemDoubleClick}
           options={[
-            ['view', 'Открыть в Stash'],
+            ['view', 'Открыть в D3S3RT'],
             ['external', 'Открыть во внешней программе']
           ]}
           onChange={(v) => set({ itemDoubleClick: v })}
@@ -339,7 +339,7 @@ function Controls({ s, set }: PaneProps) {
           value={s.middleClick}
           options={[
             ['external', 'Открыть во внешней программе'],
-            ['view', 'Открыть в Stash'],
+            ['view', 'Открыть в D3S3RT'],
             ['none', 'Ничего']
           ]}
           onChange={(v) => set({ middleClick: v })}
@@ -454,7 +454,7 @@ function Screenshot({ s, set }: PaneProps) {
           <span>Снять выбранную область</span>
           <KeyRecorder value={s.shotShortcut} onChange={(v) => set({ shotShortcut: v })} />
         </div>
-        <div className="set-note">Работает из любой программы, пока Stash запущен.</div>
+        <div className="set-note">Работает из любой программы, пока D3S3RT запущен.</div>
       </Card>
       <Card title="После скриншота">
         <Check label="Показывать уведомление" value={s.shotNotify} onChange={(v) => set({ shotNotify: v })} />
@@ -525,7 +525,7 @@ function Shortcuts({ s, set }: PaneProps) {
       {!needle && (
         <Card title="Глобальные (работают из любой программы)">
           <div className="set-keyrow">
-            <span>Показать Stash</span>
+            <span>Показать D3S3RT</span>
             <KeyRecorder value={s.showShortcut} onChange={(v) => set({ showShortcut: v })} />
           </div>
           <div className="set-keyrow">
@@ -591,7 +591,7 @@ function Password({ onLockNow }: { onLockNow(): void }) {
   return (
     <Card title="Блокировка паролем">
       <div className="set-note" style={{ marginTop: 0 }}>
-        Stash будет спрашивать пароль при запуске и после «Заблокировать сейчас». Это защита от посторонних глаз: сами файлы на диске не шифруются.
+        D3S3RT будет спрашивать пароль при запуске и после «Заблокировать сейчас». Это защита от посторонних глаз: сами файлы на диске не шифруются.
       </div>
       {has && <input type="password" placeholder="Текущий пароль" value={current} onChange={(e) => setCurrent(e.target.value)} />}
       <input type="password" placeholder={has ? 'Новый пароль' : 'Пароль'} value={pw} onChange={(e) => setPw(e.target.value)} />
@@ -624,7 +624,7 @@ function AutoImport({ s, set, folders }: PaneProps & { folders: Folder[] }) {
         <Switch value={s.autoImportEnabled} onChange={(v) => set({ autoImportEnabled: v })} />
       </div>
       <div className="set-note" style={{ marginTop: 0 }}>
-        Stash следит за папкой на диске: всё, что в неё попадает (скачали, сохранили, перетащили), автоматически добавляется в библиотеку. Файлы, которые уже лежат
+        D3S3RT следит за папкой на диске: всё, что в неё попадает (скачали, сохранили, перетащили), автоматически добавляется в библиотеку. Файлы, которые уже лежат
         в папке в момент включения, не импортируются.
       </div>
       <div className="set-row">
@@ -642,7 +642,7 @@ function AutoImport({ s, set, folders }: PaneProps & { folders: Folder[] }) {
         </div>
       </div>
       <div className="set-row">
-        <div className="set-row-label">Добавлять в папку Stash</div>
+        <div className="set-row-label">Добавлять в папку D3S3RT</div>
         <select value={s.autoImportFolderId ?? ''} onChange={(e) => set({ autoImportFolderId: e.target.value || null })}>
           <option value="">Без папки</option>
           {[...folders]
@@ -674,7 +674,7 @@ function BrowserExtension() {
   return (
     <Card title="Расширение для браузера">
       <div className="set-hint">
-        Сохраняет картинки и видео с сайтов прямо в Stash. Подходит для Chrome, Edge, Яндекс Браузера, Opera, Brave и других на Chromium.
+        Сохраняет картинки и видео с сайтов прямо в D3S3RT. Подходит для Chrome, Edge, Яндекс Браузера, Opera, Brave и других на Chromium.
         {info.version && ` Версия ${info.version}.`}
       </div>
       <div className={`ext-status${info.seenAt ? ' ok' : ''}`}>
@@ -713,7 +713,7 @@ function BrowserExtension() {
           </div>
         </li>
       </ol>
-      <div className="set-hint">После обновления Stash нажмите на карточке расширения в браузере кнопку «Обновить» (круглая стрелка).</div>
+      <div className="set-hint">После обновления D3S3RT нажмите на карточке расширения в браузере кнопку «Обновить» (круглая стрелка).</div>
     </Card>
   )
 }
@@ -739,7 +739,7 @@ function Integrations({ onOpenTelegram }: { onOpenTelegram(): void }) {
       <BrowserExtension />
       <Card title="Интеграции">
         <div className="set-keyrow">
-          <span>Telegram-бот: присылайте ссылки и файлы в Stash</span>
+          <span>Telegram-бот: присылайте ссылки и файлы в D3S3RT</span>
           <button onClick={onOpenTelegram}>Настроить…</button>
         </div>
         <div className="set-keyrow">
@@ -761,7 +761,7 @@ function Developer() {
       <Card title="О программе">
         {info && (
           <dl className="props">
-            <dt>Stash</dt>
+            <dt>D3S3RT</dt>
             <dd>{info.version}</dd>
             <dt>Electron</dt>
             <dd>{info.electron}</dd>
@@ -780,7 +780,7 @@ function Developer() {
         <div className="set-actions">
           <button onClick={() => api.openDevTools()}>Инструменты разработчика (F12)</button>
           <button onClick={() => api.openUserData()}>Открыть папку данных</button>
-          <button onClick={() => api.relaunch()}>Перезапустить Stash</button>
+          <button onClick={() => api.relaunch()}>Перезапустить D3S3RT</button>
         </div>
       </Card>
     </>

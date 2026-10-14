@@ -12,7 +12,7 @@ async function init() {
   try {
     const ping = await (await fetch(`${API}/api/ping`)).json()
     online = !!ping.library
-    $('status').textContent = ping.library ? `Библиотека: ${ping.library}` : 'Stash запущен, но библиотека не открыта'
+    $('status').textContent = ping.library ? `Библиотека: ${ping.library}` : 'D3S3RT запущен, но библиотека не открыта'
     if (online) {
       $('dot').classList.add('on')
       const { folders } = await (await fetch(`${API}/api/folders`)).json()
@@ -28,7 +28,7 @@ async function init() {
       $('folder').value = byId.has(s.folderId) ? s.folderId : ''
     }
   } catch {
-    $('status').textContent = 'Stash не запущен'
+    $('status').textContent = 'D3S3RT не запущен'
   }
   $('folder').onchange = (e) => chrome.storage.local.set({ folderId: e.target.value || null })
   document.querySelectorAll('[data-action]').forEach((b) => (b.disabled = !online))

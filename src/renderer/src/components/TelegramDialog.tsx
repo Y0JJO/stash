@@ -116,7 +116,7 @@ export function TelegramDialog({ folders, onClose }: { folders: Folder[]; onClos
             <div className="tg-row">
               <span className={`ai-dot ${status.state === 'online' ? 'idle' : status.state === 'error' ? 'error' : 'off'}`} />
               <span>
-                <b>{status.botName ? `@${status.botName}` : 'Бот Stash'}</b>{' '}
+                <b>{status.botName ? `@${status.botName}` : 'Бот D3S3RT'}</b>{' '}
                 <span className="muted">
                   {status.state === 'online' ? '— на связи' : status.state === 'error' ? `— ${status.message}` : '— подключение…'}
                 </span>
@@ -188,7 +188,7 @@ export function TelegramDialog({ folders, onClose }: { folders: Folder[]; onClos
           {connected && (
             <button
               onClick={async () => {
-                if (await api.confirm('Отключить бота?', 'Stash перестанет принимать сообщения. Токен будет удалён.', 'Отключить')) api.telegramDisconnect()
+                if (await api.confirm('Отключить бота?', 'D3S3RT перестанет принимать сообщения. Токен будет удалён.', 'Отключить')) api.telegramDisconnect()
               }}
             >
               Отключить

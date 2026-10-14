@@ -120,7 +120,7 @@ export function PluginManagerDialog({ onClose }: { onClose(): void }) {
         )}
 
         <div className="pm-list">
-          <div className="pm-section">Расширения Stash</div>
+          <div className="pm-section">Расширения D3S3RT</div>
           {!exts.length && (
             <div className="pm-note">
               Расширений пока нет. Чтобы добавить, нажмите «Установить из файла…» и выберите файл .stashplugin.
@@ -159,7 +159,7 @@ export function PluginManagerDialog({ onClose }: { onClose(): void }) {
           {foreign.length > 0 && <div className="pm-section">Плагины ({foreign.map((f) => `.${f}`).join(', ')})</div>}
           {foreign.length > 0 && list && !shown.length && (
             <div className="pm-empty">
-              {list.length ? 'Ничего не найдено' : 'Плагинов пока нет. Нажмите «Установить из файла…» или перетащите файл плагина в окно Stash.'}
+              {list.length ? 'Ничего не найдено' : 'Плагинов пока нет. Нажмите «Установить из файла…» или перетащите файл плагина в окно D3S3RT.'}
             </div>
           )}
           {shown.map((p) => (

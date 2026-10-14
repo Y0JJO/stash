@@ -1235,7 +1235,7 @@ textarea {
   font-size: 40px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #8f9bff, #d48bff);
+  background: linear-gradient(135deg, #ffc35c, #e0577f);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
