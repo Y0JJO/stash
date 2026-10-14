@@ -11,7 +11,8 @@ import type { Folder } from '../shared/types'
 import type { ImportMeta, ImportResult } from './importer'
 
 /** Port the browser extension talks to. */
-export const CLIPPER_PORT = 41597
+/** The extension pings all of these (extension/app.js) — another program, e.g. Eagle, may hold the first. */
+export const CLIPPER_PORTS = Array.from({ length: 10 }, (_, i) => 41597 + i)
 
 const FFMPEG = (ffmpegStatic ?? 'ffmpeg').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
 const UA =
@@ -302,7 +303,13 @@ export function startClipperServer(deps: ClipperDeps): http.Server {
       reply(500, { error: (err as Error).message })
     }
   })
-  server.on('error', (err) => console.error('[clipper] server error', err))
-  server.listen(CLIPPER_PORT, '127.0.0.1')
+  let next = 0
+  const listen = () => server.listen(CLIPPER_PORTS[next], '127.0.0.1')
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && ++next < CLIPPER_PORTS.length) return listen()
+    console.error('[clipper] server error', err)
+  })
+  server.on('listening', () => console.log(`[clipper] listening on ${CLIPPER_PORTS[next]}`))
+  listen()
   return server
 }

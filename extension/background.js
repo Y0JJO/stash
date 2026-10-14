@@ -1,8 +1,9 @@
-// Stash Clipper — background service worker.
-// Talks to the Stash desktop app at http://127.0.0.1:41597 and remembers which video
+// D3S3RT Clipper — background service worker.
+// Talks to the D3S3RT desktop app (see app.js for how it is found) and remembers which video
 // streams each tab requested (needed for sites that play video through blob: URLs).
 
-const API = 'http://127.0.0.1:41597'
+importScripts('app.js')
+
 const MAX_STREAMS = 40
 
 // ---------- context menu ----------
@@ -48,7 +49,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(true)
   }
   if (msg?.type === 'stash:folders') {
-    fetch(`${API}/api/folders`)
+    appFetch('/api/folders')
       .then((r) => r.json())
       .then(sendResponse, () => sendResponse(null))
     return true
@@ -146,7 +147,7 @@ async function settings() {
 }
 
 async function post(payload) {
-  const res = await fetch(`${API}/api/add`, {
+  const res = await appFetch('/api/add', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)

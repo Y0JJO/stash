@@ -1,4 +1,3 @@
-const API = 'http://127.0.0.1:41597'
 const $ = (id) => document.getElementById(id)
 
 async function init() {
@@ -10,12 +9,12 @@ async function init() {
 
   let online = false
   try {
-    const ping = await (await fetch(`${API}/api/ping`)).json()
+    const { ping } = await findApp()
     online = !!ping.library
     $('status').textContent = ping.library ? `Библиотека: ${ping.library}` : 'D3S3RT запущен, но библиотека не открыта'
     if (online) {
       $('dot').classList.add('on')
-      const { folders } = await (await fetch(`${API}/api/folders`)).json()
+      const { folders } = await (await appFetch('/api/folders')).json()
       const byId = new Map(folders.map((f) => [f.id, f]))
       const pathOf = (f, depth = 0) => {
         const p = f.parentId && byId.get(f.parentId)

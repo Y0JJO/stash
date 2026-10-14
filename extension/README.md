@@ -10,7 +10,7 @@ and video from any site into the running D3S3RT app.
 3. Click **Load unpacked** and select this `extension` folder.
 4. After pulling changes, press the reload icon on the extension card and refresh open tabs.
 
-D3S3RT must be running with a library open — the extension talks to it at `http://127.0.0.1:41597`.
+D3S3RT must be running with a library open — the extension talks to it at `http://127.0.0.1:41597`, or the next free port up to 41606 when another program (e.g. Eagle) holds it.
 
 ## Features
 
