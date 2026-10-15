@@ -19,7 +19,7 @@ import { Updater } from './updater'
 import { browserExtInfo, extensionDir, openExtensionsPage, syncExtension } from './browserExt'
 import type { Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
-import { boardSvg, renderBoardPng } from './boards'
+import { boardLayers, boardSvg, renderBoardPng } from './boards'
 import { copyFolderToLibrary, exportFolderToDir, exportFolderToZip } from './folderOps'
 import { boundsOf, masonry } from '../shared/boardLayout'
 import { captureArea } from './capture'
@@ -583,18 +583,30 @@ function registerIpc(): void {
     saveConfig(config)
     return r.filePaths[0]
   }
-  /** Renders the board to a PNG and opens it in PureRef (layout preserved as one image). */
+  /**
+   * Opens the board in PureRef with every node as its own image in its place, via PureRef's
+   * command line (`-c "load;<file>;<x>;<y>"`, x/y = image centre). Loaded in paint order.
+   */
   handle('apps:pureref', async (boardId: string) => {
     const l = need()
     const board = l.getBoard(boardId)
     if (!board) throw new Error('Мудборд не найден')
     const exe = await purerefExe()
     if (!exe) return false
-    const dir = path.join(app.getPath('userData'), 'pureref')
+    const layers = await boardLayers(l, board)
+    if (!layers.length) throw new Error('На доске нет картинок')
+    const dir = path.join(app.getPath('userData'), 'pureref', board.id)
+    await fs.promises.rm(dir, { recursive: true, force: true })
     await fs.promises.mkdir(dir, { recursive: true })
-    const file = path.join(dir, `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.png`)
-    await fs.promises.writeFile(file, await renderBoardPng(l, board))
-    spawn(exe, [file], { detached: true, stdio: 'ignore' }).unref()
+    const args: string[] = []
+    for (const [i, layer] of layers.entries()) {
+      // ';' separates command arguments and ',' separates paths, so keep them out of file names.
+      const safe = layer.name.replace(/[<>:"/\\|?*;,]/g, '_').slice(0, 60)
+      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${safe}.png`)
+      await fs.promises.writeFile(file, layer.png)
+      args.push('-c', `load;${file.replace(/\\/g, '/')};${layer.cx};${layer.cy}`)
+    }
+    spawn(exe, args, { detached: true, stdio: 'ignore' }).unref()
     return true
   })
   handle('apps:open', (name: 'figma' | 'miro' | 'pureref') => {

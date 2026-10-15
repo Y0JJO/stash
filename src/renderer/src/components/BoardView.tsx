@@ -669,8 +669,8 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
         { id: 'figma-open', label: 'Открыть Figma' }
       ] },
       { label: 'PureRef', icon: 'send', submenu: [
-        { id: 'pr-open', label: 'Открыть доску в PureRef' },
-        { id: 'pr-png', label: 'Скопировать доску картинкой' }
+        { id: 'pr-open', label: 'Открыть в PureRef отдельными картинками' },
+        { id: 'pr-png', label: 'Скопировать одной картинкой' }
       ] },
       { label: 'Miro', icon: 'send', submenu: [
         { id: 'miro-png', label: 'Скопировать доску картинкой' },

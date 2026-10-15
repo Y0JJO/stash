@@ -121,6 +121,41 @@ export async function renderBoardPng(lib: Library, board: Board, maxSide = 8000,
     .toBuffer()
 }
 
+export interface BoardLayer {
+  name: string
+  png: Buffer
+  /** Centre of the layer in output pixels, relative to the board's centre. */
+  cx: number
+  cy: number
+}
+
+/**
+ * Every visible node rasterised on its own (flips, opacity, rotation baked in), in paint order,
+ * with its centre position — for apps that take separate pictures instead of one flat image.
+ */
+export async function boardLayers(lib: Library, board: Board, maxSide = 16000): Promise<BoardLayer[]> {
+  const nodes = prepared(board)
+  const b = boundsOf(nodes)
+  if (!b) throw new Error('Доска пуста')
+  const scale = Math.min(2, maxSide / Math.max(b.w, b.h, 1))
+  const layers: BoardLayer[] = []
+  for (const n of nodes) {
+    try {
+      const img = await rasterNode(lib, n, scale)
+      if (!img) continue
+      layers.push({
+        name: (n.itemId && lib.getItem(n.itemId)?.name) || n.name || n.type,
+        png: await img.png().toBuffer(),
+        cx: Math.round((n.x + n.w / 2 - (b.x + b.w / 2)) * scale),
+        cy: Math.round((n.y + n.h / 2 - (b.y + b.h / 2)) * scale)
+      })
+    } catch {
+      /* unreadable file — skip it */
+    }
+  }
+  return layers
+}
+
 /**
  * SVG with every node as its own group: pasted or dropped into Figma, each picture, shape and note
  * stays a separate layer in its place. Images are capped at 1600px to keep the clipboard manageable.
