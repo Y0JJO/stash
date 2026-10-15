@@ -34,7 +34,23 @@
       if (el.tagName === 'IMG' && el.naturalWidth > 1) return el
       if (!bg && el.clientWidth >= MIN_W && el.clientHeight >= MIN_H && bgUrl(el)) bg = el
     }
-    return bg
+    return bg || mediaInside(x, y)
+  }
+
+  /**
+   * elementsFromPoint skips elements with pointer-events: none, which Behance (and others) put on every
+   * image, so look inside the topmost containers for media drawn under the cursor.
+   */
+  function mediaInside(x, y) {
+    for (const el of document.elementsFromPoint(x, y).slice(0, 6)) {
+      if (el === host || el === document.body || el === document.documentElement) continue
+      for (const m of el.querySelectorAll('img, video')) {
+        if (m.tagName === 'IMG' && m.naturalWidth <= 1) continue
+        const r = m.getBoundingClientRect()
+        if (r.width >= MIN_W && r.height >= MIN_H && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return m
+      }
+    }
+    return null
   }
 
   function bestFromSrcset(img) {

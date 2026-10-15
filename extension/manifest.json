@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "D3S3RT Clipper",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Сохраняет картинки и видео с любых сайтов в D3S3RT в один клик.",
   "permissions": [
     "contextMenus",
