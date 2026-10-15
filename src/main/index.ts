@@ -20,14 +20,14 @@ import { browserExtInfo, extensionDir, openExtensionsPage, syncExtension } from 
 import type { Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
 import { boardLayers, boardScene, boardSvg, renderBoardPng } from './boards'
-import { foregroundTitle, pressCtrl, stopKeys, warmUpKeys } from './winKeys'
+import { copyFiles, foregroundWindow, pressCtrl, stopKeys, warmUpKeys } from './winKeys'
 import { arrangeMiroClip, arrangeMiroClipByShape, decodeMiroHtml, encodeMiroHtml, type FrameEntry, type LayoutEntry } from './miroClipboard'
 import { copyFolderToLibrary, exportFolderToDir, exportFolderToZip } from './folderOps'
 import { boundsOf, masonry } from '../shared/boardLayout'
 import { captureArea } from './capture'
 import { reverseSearch, type SearchEngine } from './websearch'
 import { installTools, TelegramBot, type TelegramConfig } from './telegram'
-import type { AiStatus, BoardData, BoardNode, ConvertOptions, FolderPatch, ItemPatch, MenuEntry, Query } from '../shared/types'
+import type { AiStatus, Board, BoardData, BoardNode, ConvertOptions, FolderPatch, ItemPatch, MenuEntry, Query } from '../shared/types'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'stash', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }
@@ -520,48 +520,92 @@ function registerIpc(): void {
       /* nothing drawable (e.g. only hidden nodes) — still paste back into the board */
     }
     await clipboard.write([new ClipboardItem(items)])
+    // Figma gets the same nodes as an SVG file (built in the background, pasted on Ctrl+V in Figma).
+    forApps = { token, items, figmaFile: figmaSvgFile(l, part).catch(() => null) }
+    armPasteHook()
     return true
   })
+  /** Writes the board as a Figma SVG (real frames, full-size pictures) to userData/figma. */
+  const figmaSvgFile = async (l: Library, board: Board) => {
+    const dir = path.join(app.getPath('userData'), 'figma')
+    await fs.promises.rm(dir, { recursive: true, force: true })
+    await fs.promises.mkdir(dir, { recursive: true })
+    // Figma names the imported frame after the file, so the file takes the frame's (or board's) name.
+    const { svg, name } = await boardSvg(l, board)
+    const file = path.join(dir, `${name.replace(/[<>:"/\\|?*]/g, '_') || 'Мудборд'}.svg`)
+    await fs.promises.writeFile(file, svg)
+    return file
+  }
+
+  /**
+   * For 10 minutes after a board copy, Ctrl+V is caught system-wide and routed by the window in
+   * front: Miro gets the paste → cut → paste dance (see watchMiroPaste), Figma gets the board as an
+   * SVG file (Figma ignores SVG *text* over ~120–250 KB, but imports files fine, with nested <svg>
+   * as real frames), everything else just gets Ctrl+V passed through.
+   */
+  const PASTE_KEY = 'CommandOrControl+V'
+  const MIRO_TITLE = /\bmiro\b|online whiteboard/i
+  const isFigma = (w: { process: string; title: string }) => /^figma$/i.test(w.process) || /figma/i.test(w.title)
+  let forApps: { token: string; items: Record<string, Blob>; figmaFile: Promise<string | null> } | null = null
+  let hookUntil = 0
+  const hookOn = () => Date.now() < hookUntil
+  const register = () => {
+    globalShortcut.unregister(PASTE_KEY)
+    if (hookOn()) globalShortcut.register(PASTE_KEY, () => void onPaste())
+  }
+  /** Ctrl+<key> into the window in front, with our hotkey out of the way so it reaches the window. */
+  const pressThrough = async (key: string) => {
+    globalShortcut.unregister(PASTE_KEY)
+    try {
+      await pressCtrl(key)
+    } finally {
+      register()
+    }
+  }
+  const armPasteHook = () => {
+    hookUntil = Date.now() + 10 * 60_000
+    warmUpKeys()
+    register()
+    setTimeout(register, 10 * 60_000 + 1000) // drops the hotkey once expired
+  }
+  const onPaste = async () => {
+    globalShortcut.unregister(PASTE_KEY)
+    const front = await foregroundWindow()
+    if (miroWatch && !miroWatch.autoCutAt && MIRO_TITLE.test(front.title)) return void (await miroAutoPaste(miroWatch))
+    const copy = forApps
+    const file = copy && isFigma(front) ? await copy.figmaFile : null
+    if (!copy || !file) return void (await pressThrough('v'))
+    await copyFiles([file])
+    await pressThrough('v')
+    // Put our own copy back once Figma has read the file, so Miro / board paste keep working.
+    setTimeout(() => {
+      if (forApps === copy) void clipboard.write([new ClipboardItem(copy.items)]).catch(() => {})
+    }, 2500)
+  }
+
   /**
    * After a board copy, for 10 minutes: once the user cuts/copies those pictures in Miro, rewrite
    * Miro's clipboard so the next paste lays them out like the board. Miro only knows pictures it
    * has uploaded itself, so the first paste (a row of separate images) can't be skipped — but
-   * while armed, Ctrl+V in a Miro window does paste → cut → paste for the user. Ctrl+V anywhere
-   * else is passed straight through.
+   * Ctrl+V in a Miro window does paste → cut → paste for the user.
    */
   type MiroWatch = { layout: LayoutEntry[]; frames: FrameEntry[]; htmlBytes: number; until: number; timer: NodeJS.Timeout; busy: boolean; autoCutAt?: number }
-  const PASTE_KEY = 'CommandOrControl+V'
-  const MIRO_TITLE = /\bmiro\b|online whiteboard/i
   let miroWatch: MiroWatch | null = null
   const stopMiroWatch = (w: MiroWatch) => {
     clearInterval(w.timer)
-    if (miroWatch === w) {
-      miroWatch = null
-      globalShortcut.unregister(PASTE_KEY)
-    }
+    if (miroWatch === w) miroWatch = null
+  }
+  const miroAutoPaste = async (w: MiroWatch) => {
+    await pressThrough('v')
+    // Give Miro time to upload the pasted pictures before cutting them.
+    await new Promise((r) => setTimeout(r, Math.min(8000, 1500 + (w.htmlBytes / 1e6) * 800)))
+    w.autoCutAt = Date.now()
+    await pressThrough('x')
   }
   const watchMiroPaste = (layout: LayoutEntry[], frames: FrameEntry[], htmlBytes: number) => {
     if (miroWatch) stopMiroWatch(miroWatch)
     const w: MiroWatch = { layout, frames, htmlBytes, until: Date.now() + 10 * 60_000, busy: false, timer: setInterval(() => void tick(), 400) }
     miroWatch = w
-    warmUpKeys()
-    const armed = () => miroWatch === w && !w.autoCutAt
-    const onPaste = async () => {
-      // Our own keystrokes must reach the window, not this hotkey.
-      globalShortcut.unregister(PASTE_KEY)
-      if (!armed() || !MIRO_TITLE.test(await foregroundTitle())) {
-        await pressCtrl('v')
-        if (armed()) globalShortcut.register(PASTE_KEY, () => void onPaste())
-        return
-      }
-      await pressCtrl('v')
-      // Give Miro time to upload the pasted pictures before cutting them.
-      await new Promise((r) => setTimeout(r, Math.min(8000, 1500 + (w.htmlBytes / 1e6) * 800)))
-      w.autoCutAt = Date.now()
-      await pressCtrl('x')
-    }
-    globalShortcut.unregister(PASTE_KEY)
-    globalShortcut.register(PASTE_KEY, () => void onPaste())
     const tick = async () => {
       if (w.busy) return
       if (Date.now() > w.until || miroWatch !== w) return stopMiroWatch(w)
@@ -577,14 +621,14 @@ function registerIpc(): void {
           // Our own cut came back as something else (e.g. not all uploaded yet): put it back.
           if (auto) {
             stopMiroWatch(w)
-            await pressCtrl('v')
+            await pressThrough('v')
             new Notification({ title: 'Не удалось разложить в Miro', body: 'Картинки вставлены обратно рядом. Попробуйте ещё раз: Ctrl+C в мудборде → Ctrl+V в Miro' }).show()
           }
           return
         }
         await clipboard.write([new ClipboardItem({ 'text/html': new Blob([encodeMiroHtml(clip)], { type: 'text/html' }) })])
         stopMiroWatch(w)
-        if (auto) await pressCtrl('v')
+        if (auto) await pressThrough('v')
         else new Notification({ title: 'Раскладка для Miro готова', body: 'Вставьте в Miro (Ctrl+V) — картинки встанут как на мудборде' }).show()
       } catch {
         /* clipboard busy — try again next tick */
@@ -668,11 +712,12 @@ function registerIpc(): void {
     const l = need()
     const board = l.getBoard(id)
     if (!board) throw new Error('Мудборд не найден')
-    const svg = await boardSvg(l, board)
     if (target === 'clipboard') {
-      await clipboard.writeText(svg)
+      // As a file, like Explorer's Copy: Figma ignores pasted SVG text over ~120–250 KB.
+      await copyFiles([await figmaSvgFile(l, board)])
       return true
     }
+    const { svg } = await boardSvg(l, board)
     const r = await dialog.showSaveDialog(win!, {
       title: 'Сохранить SVG для Figma',
       defaultPath: path.join(app.getPath('documents'), `${board.name}.svg`),

@@ -301,7 +301,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
         apply(all.filter((n) => !gone.has(n.id)))
         setSelected(new Set())
       }
-      flash(`${cut ? 'Вырезано' : 'Скопировано'} — можно вставить в Miro с раскладкой (Ctrl+V)`)
+      flash(`${cut ? 'Вырезано' : 'Скопировано'} — Ctrl+V вставит с раскладкой и в Miro, и в Figma`)
     } catch (e) {
       flash(errText(e))
     }

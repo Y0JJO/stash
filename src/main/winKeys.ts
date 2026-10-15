@@ -1,16 +1,24 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
 /**
- * A long-lived PowerShell helper (Windows only) that answers "which window is in front" and
- * presses Ctrl+key — fast enough to sit behind a global hotkey, unlike spawning
- * PowerShell for every call (~0.3–1 s).
+ * A long-lived PowerShell helper (Windows only) that answers "which window is in front", presses
+ * Ctrl+key and puts files on the clipboard — fast enough to sit behind a global hotkey, unlike
+ * spawning PowerShell for every call (~0.3–1 s).
  */
-const SCRIPT = `Add-Type @"
+const SCRIPT = String.raw`Add-Type -AssemblyName System.Windows.Forms
+Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;
 public static class StashWin {
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-  public static string Title() { var b = new StringBuilder(1024); GetWindowText(GetForegroundWindow(), b, 1024); return b.ToString(); }
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  // "<process name>\t<window title>" of the window in front.
+  public static string Front() {
+    var h = GetForegroundWindow(); var b = new StringBuilder(1024); GetWindowText(h, b, 1024);
+    uint pid; GetWindowThreadProcessId(h, out pid);
+    string name = ""; try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch {}
+    return name + "\t" + b.ToString().Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');
+  }
   [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   // Ctrl + a key by virtual-key code: unlike SendKeys, independent of the keyboard layout.
   public static void Ctrl(byte vk) { keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero); }
@@ -20,10 +28,17 @@ public static class StashWin {
 [Console]::Out.WriteLine('ready')
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   try {
-    if ($line -eq 'title') { [Console]::Out.WriteLine(([StashWin]::Title() -replace '[\\r\\n]', ' ')) }
+    if ($line -eq 'front') { [Console]::Out.WriteLine([StashWin]::Front()) }
     elseif ($line.StartsWith('ctrl ')) {
       [StashWin]::Ctrl([byte][char]$line.Substring(5, 1).ToUpper())
       Start-Sleep -Milliseconds 30
+      [Console]::Out.WriteLine('ok')
+    }
+    elseif ($line.StartsWith('files ')) {
+      $c = New-Object System.Collections.Specialized.StringCollection
+      # Paths come base64-encoded UTF-8: stdin isn't read as UTF-8, and names may be Cyrillic.
+      foreach ($f in [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($line.Substring(6))).Split('|')) { [void]$c.Add($f) }
+      [System.Windows.Forms.Clipboard]::SetFileDropList($c)
       [Console]::Out.WriteLine('ok')
     } else { [Console]::Out.WriteLine('') }
   } catch { [Console]::Out.WriteLine('') }
@@ -75,10 +90,15 @@ function ask(line: string): Promise<string> {
 
 /** Starts the helper ahead of time (compiling its bit of C# takes about a second). */
 export const warmUpKeys = () => void ensure()
-/** Title of the window in front. */
-export const foregroundTitle = () => ask('title')
+/** Process name (e.g. "Figma", "chrome") and title of the window in front. */
+export async function foregroundWindow(): Promise<{ process: string; title: string }> {
+  const [process = '', title = ''] = (await ask('front')).split('\t')
+  return { process, title }
+}
 /** Presses Ctrl + a letter key ("v", "x") in the window in front, whatever the keyboard layout. */
 export const pressCtrl = async (letter: string) => void (await ask(`ctrl ${letter}`))
+/** Puts files on the clipboard the way Explorer's Copy does, so apps paste them as files. */
+export const copyFiles = async (paths: string[]) => void (await ask(`files ${Buffer.from(paths.join('|'), 'utf8').toString('base64')}`))
 export function stopKeys(): void {
   proc?.kill()
   proc = null

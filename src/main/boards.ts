@@ -190,35 +190,66 @@ export async function boardLayers(lib: Library, board: Board, maxSide = 16000): 
 }
 
 /**
- * SVG with every node as its own group: pasted or dropped into Figma, each picture, shape and note
- * stays a separate layer in its place. Images are capped at 1600px to keep the clipboard manageable.
+ * SVG for Figma: every node is its own layer in its place, and every frame is a nested <svg> —
+ * which Figma imports as a real frame — holding the nodes that lie inside it. Pictures go in at
+ * up to 4096px (Figma's limit); that is fine for a pasted or dropped file, but far too big to
+ * paste as text (Figma silently ignores SVG text over roughly 120–250 KB).
  */
-export async function boardSvg(lib: Library, board: Board): Promise<string> {
+export async function boardSvg(lib: Library, board: Board): Promise<{ svg: string; name: string }> {
   const nodes = prepared(board)
   const b = boundsOf(nodes)
   if (!b) throw new Error('Доска пуста')
   const W = Math.round(b.w + PAD * 2)
   const H = Math.round(b.h + PAD * 2)
-  const parts: string[] = [`<rect width="${W}" height="${H}" fill="${esc(board.data.bg)}"/>`]
+  const frames = nodes.filter((n) => n.type === 'frame')
+  // Innermost frame holding each node (the smallest one it lies entirely inside).
+  const parentOf = new Map<string, string>()
   for (const n of nodes) {
-    const cx = n.x + n.w / 2 - b.x + PAD
-    const cy = n.y + n.h / 2 - b.y + PAD
+    let best: BoardNode | undefined
+    for (const f of frames) if (insideFrame(n, f) && (!best || f.w * f.h < best.w * best.h)) best = f
+    if (best) parentOf.set(n.id, best.id)
+  }
+  const layer = async (n: BoardNode, ox: number, oy: number): Promise<string> => {
+    if (n.type === 'frame') {
+      const kids = await Promise.all(nodes.filter((c) => parentOf.get(c.id) === n.id).map((c) => layer(c, n.x, n.y)))
+      const fill = n.fill ?? 'rgba(255,255,255,0.035)'
+      return `<svg id="${esc(n.name || 'Frame')}" x="${(n.x - ox).toFixed(1)}" y="${(n.y - oy).toFixed(1)}" width="${n.w.toFixed(1)}" height="${n.h.toFixed(1)}" viewBox="0 0 ${n.w.toFixed(1)} ${n.h.toFixed(1)}" opacity="${n.opacity ?? 1}"><rect width="${n.w.toFixed(1)}" height="${n.h.toFixed(1)}" fill="${esc(fill)}"/>${kids.join('')}</svg>`
+    }
+    const cx = n.x + n.w / 2 - ox
+    const cy = n.y + n.h / 2 - oy
     const transform = `translate(${cx.toFixed(1)} ${cy.toFixed(1)}) rotate(${n.rotation ?? 0}) scale(${n.flipX ? -1 : 1} ${n.flipY ? -1 : 1}) translate(${(-n.w / 2).toFixed(1)} ${(-n.h / 2).toFixed(1)})`
     let inner = ''
     let id: string = n.type
     if (n.type === 'item' && n.itemId) {
       const src = sourceFor(lib, n.itemId)
-      if (!src) continue
+      if (!src) return ''
       try {
-        const px = Math.min(1600, Math.round(n.w * 2))
-        const buf = await sharp(src, { animated: false, limitInputPixels: false }).rotate().resize(px, Math.max(1, Math.round((px * n.h) / n.w)), { fit: 'cover' }).jpeg({ quality: 88 }).toBuffer()
-        inner = `<image width="${n.w.toFixed(1)}" height="${n.h.toFixed(1)}" preserveAspectRatio="xMidYMid slice" href="data:image/jpeg;base64,${buf.toString('base64')}"/>`
+        const img = sharp(src, { animated: false, limitInputPixels: false }).rotate()
+        const meta = await img.metadata()
+        const [mw, mh] = (meta.orientation ?? 1) >= 5 ? [meta.height ?? 1, meta.width ?? 1] : [meta.width ?? 1, meta.height ?? 1]
+        // As sharp as the source allows for the node's crop, capped at 4096px.
+        const px = Math.max(1, Math.min(4096, mw, Math.round((mh * n.w) / n.h)))
+        const sized = img.resize(px, Math.max(1, Math.round((px * n.h) / n.w)), { fit: 'cover' })
+        const [mime, buf] = meta.hasAlpha ? ['image/png', await sized.png().toBuffer()] : ['image/jpeg', await sized.jpeg({ quality: 92 }).toBuffer()]
+        inner = `<image width="${n.w.toFixed(1)}" height="${n.h.toFixed(1)}" preserveAspectRatio="xMidYMid slice" href="data:${mime};base64,${buf.toString('base64')}"/>`
         id = lib.getItem(n.itemId)?.name ?? 'image'
       } catch {
-        continue
+        return ''
       }
     } else inner = nodeInnerSvg(n)
-    parts.push(`<g id="${esc(id)}" transform="${transform}" opacity="${n.opacity ?? 1}">${inner}</g>`)
+    return `<g id="${esc(id)}" transform="${transform}" opacity="${n.opacity ?? 1}">${inner}</g>`
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join('')}</svg>`
+  const tops = nodes.filter((n) => !parentOf.has(n.id))
+  const xmlns = 'xmlns="http://www.w3.org/2000/svg"'
+  // Figma turns the root <svg> itself into a frame (named after the file). When the copy is one
+  // frame with its contents, that frame *is* the root — otherwise Figma nests it in a second frame.
+  if (tops.length === 1 && tops[0].type === 'frame') {
+    const f = tops[0]
+    const [w, h] = [f.w.toFixed(1), f.h.toFixed(1)]
+    const kids = await Promise.all(nodes.filter((c) => parentOf.get(c.id) === f.id).map((c) => layer(c, f.x, f.y)))
+    const svg = `<svg ${xmlns} width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="${esc(board.data.bg)}"/><rect width="${w}" height="${h}" fill="${esc(f.fill ?? 'rgba(255,255,255,0.035)')}"/>${kids.join('')}</svg>`
+    return { svg, name: f.name || 'Frame' }
+  }
+  const top = await Promise.all(tops.map((n) => layer(n, b.x - PAD, b.y - PAD)))
+  return { svg: `<svg ${xmlns} width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="${esc(board.data.bg)}"/>${top.join('')}</svg>`, name: board.name }
 }
