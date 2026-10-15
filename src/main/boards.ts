@@ -127,33 +127,66 @@ export interface BoardLayer {
   /** Centre of the layer in output pixels, relative to the board's centre. */
   cx: number
   cy: number
+  /** Size of the PNG in pixels. */
+  w: number
+  h: number
+  /** Index into `frames` of the frame this layer sits entirely inside (native frames only). */
+  frame?: number
 }
+
+/** A frame kept as a frame (not rasterised), in the same output pixels as the layers. */
+export interface BoardFrame {
+  name: string
+  fill?: string | null
+  cx: number
+  cy: number
+  w: number
+  h: number
+}
+
+/** Does `n` sit entirely inside frame `f`? (The same rule the canvas uses to drag a frame's contents.) */
+export const insideFrame = (n: BoardNode, f: BoardNode) => n.id !== f.id && n.x >= f.x && n.y >= f.y && n.x + n.w <= f.x + f.w && n.y + n.h <= f.y + f.h
 
 /**
  * Every visible node rasterised on its own (flips, opacity, rotation baked in), in paint order,
  * with its centre position — for apps that take separate pictures instead of one flat image.
+ * With `nativeFrames`, frames come back separately (for apps that have frames of their own) and
+ * each layer knows the innermost frame that holds it.
  */
-export async function boardLayers(lib: Library, board: Board, maxSide = 16000): Promise<BoardLayer[]> {
+export async function boardScene(lib: Library, board: Board, opts: { maxSide?: number; nativeFrames?: boolean } = {}): Promise<{ layers: BoardLayer[]; frames: BoardFrame[] }> {
   const nodes = prepared(board)
   const b = boundsOf(nodes)
   if (!b) throw new Error('Доска пуста')
-  const scale = Math.min(2, maxSide / Math.max(b.w, b.h, 1))
+  const scale = Math.min(2, (opts.maxSide ?? 16000) / Math.max(b.w, b.h, 1))
+  const at = (n: BoardNode) => ({
+    cx: Math.round((n.x + n.w / 2 - (b.x + b.w / 2)) * scale),
+    cy: Math.round((n.y + n.h / 2 - (b.y + b.h / 2)) * scale)
+  })
+  const frameNodes = opts.nativeFrames ? nodes.filter((n) => n.type === 'frame') : []
+  const frames: BoardFrame[] = frameNodes.map((f) => ({ name: f.name ?? '', fill: f.fill, ...at(f), w: Math.round(f.w * scale), h: Math.round(f.h * scale) }))
   const layers: BoardLayer[] = []
   for (const n of nodes) {
+    if (opts.nativeFrames && n.type === 'frame') continue
     try {
       const img = await rasterNode(lib, n, scale)
       if (!img) continue
-      layers.push({
-        name: (n.itemId && lib.getItem(n.itemId)?.name) || n.name || n.type,
-        png: await img.png().toBuffer(),
-        cx: Math.round((n.x + n.w / 2 - (b.x + b.w / 2)) * scale),
-        cy: Math.round((n.y + n.h / 2 - (b.y + b.h / 2)) * scale)
+      const { data, info } = await img.png().toBuffer({ resolveWithObject: true })
+      // Innermost frame = the smallest one that holds the node.
+      let frame: number | undefined
+      frameNodes.forEach((f, i) => {
+        if (insideFrame(n, f) && (frame === undefined || f.w * f.h < frameNodes[frame].w * frameNodes[frame].h)) frame = i
       })
+      layers.push({ name: (n.itemId && lib.getItem(n.itemId)?.name) || n.name || n.type, png: data, w: info.width, h: info.height, ...at(n), frame })
     } catch {
       /* unreadable file — skip it */
     }
   }
-  return layers
+  return { layers, frames }
+}
+
+/** Every visible node as its own picture, frames included (see `boardScene`). */
+export async function boardLayers(lib: Library, board: Board, maxSide = 16000): Promise<BoardLayer[]> {
+  return (await boardScene(lib, board, { maxSide })).layers
 }
 
 /**

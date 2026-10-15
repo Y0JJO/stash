@@ -73,3 +73,6 @@ export function savePref(key: string, value: unknown): void {
     /* storage unavailable — prefs just won't persist */
   }
 }
+
+/** Lower-case letter of the physical key (KeyC → "c") so shortcuts work in any keyboard layout; other keys as typed. */
+export const keyOf = (e: { code: string; key: string }): string => (/^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase())

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { BoardInfo, Counts, Folder, MenuEntry, Scope, SortKey, TagCount } from '../../../shared/types'
 import { FOLDER_COLORS } from '../../../shared/types'
 import { api, droppedPaths } from '../api'
-import { folderPaths, loadPref, savePref } from '../util'
+import { folderPaths, keyOf, loadPref, savePref } from '../util'
 import { AiStatusBar } from './AiStatusBar'
 import { useSettings } from '../settings'
 import { AutoTagDialog, PasswordDialog } from './FolderDialogs'
@@ -268,7 +268,7 @@ export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath
     const onKey = (e: KeyboardEvent) => {
       const t = e.target instanceof Element ? e.target : document.body
       if (t.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('.cm-backdrop, .modal-backdrop, .viewer')) return
-      const k = e.key.toLowerCase()
+      const k = keyOf(e)
       if (e.ctrlKey && e.shiftKey && k === 'n') newFolder(current ? current.parentId : null)
       else if (e.altKey && k === 'n' && current) newFolder(current.id)
       else if (e.key === 'F2' && current) setEditing(current.id)

@@ -4,7 +4,7 @@ import { NO_FILTERS } from '../../../shared/types'
 import { masonry, newNodeId } from '../../../shared/boardLayout'
 import { nodeSvg, PALETTE_W, paletteHeight } from '../../../shared/boardSvg'
 import { api, droppedPaths, fileUrl, thumbUrl } from '../api'
-import { BROWSER_IMAGE, clamp } from '../util'
+import { BROWSER_IMAGE, clamp, keyOf } from '../util'
 import { Icon } from './Icon'
 import { STICKER_ICONS } from '../../../shared/icons'
 
@@ -228,7 +228,9 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
       history.current.past.push(before)
       history.current.future = []
       await load(true)
-      setSelected(new Set(data.nodes.filter((n) => n.itemId && ids.includes(n.itemId)).map((n) => n.id)))
+      // Only the new nodes: the same item may already be on the board.
+      const had = new Set(before.map((n) => n.id))
+      setSelected(new Set(data.nodes.filter((n) => !had.has(n.id)).map((n) => n.id)))
     } catch (e) {
       flash(errText(e))
     }
@@ -282,6 +284,41 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
   const duplicate = () => {
     const copies = nodesRef.current.filter((n) => selected.has(n.id)).map((n, i) => ({ ...n, id: newNodeId(), x: n.x + 30, y: n.y + 30, z: maxZ() + 1 + i, locked: false }))
     if (!copies.length) return
+    apply([...nodesRef.current, ...copies])
+    setSelected(new Set(copies.map((c) => c.id)))
+  }
+
+  const copySelected = async (cut = false) => {
+    const all = nodesRef.current
+    const frames = all.filter((f) => selected.has(f.id) && f.type === 'frame')
+    // A copied frame takes along everything lying entirely inside it (as dragging it does).
+    const picked = all.filter((n) => selected.has(n.id) || frames.some((f) => n.id !== f.id && n.x >= f.x && n.y >= f.y && n.x + n.w <= f.x + f.w && n.y + n.h <= f.y + f.h))
+    if (!picked.length) return
+    try {
+      await api.boardCopyNodes(boardId, picked)
+      if (cut) {
+        const gone = new Set(picked.filter((n) => !n.locked).map((n) => n.id))
+        apply(all.filter((n) => !gone.has(n.id)))
+        setSelected(new Set())
+      }
+      flash(`${cut ? 'Вырезано' : 'Скопировано'} — можно вставить в Miro с раскладкой (Ctrl+V)`)
+    } catch (e) {
+      flash(errText(e))
+    }
+  }
+
+  /** Ctrl+V: copied board nodes keep their layout, centred on `at`; otherwise an image from the clipboard. */
+  const paste = async (at = center()) => {
+    const r = await api.boardPaste().catch((e) => (flash(errText(e)), undefined))
+    if (r === undefined) return
+    if (!r) return flash('В буфере нет картинки')
+    if ('id' in r) return addItems([r.id], at)
+    const xs = r.nodes.map((n) => [n.x, n.x + n.w])
+    const ys = r.nodes.map((n) => [n.y, n.y + n.h])
+    const dx = at.x - (Math.min(...xs.flat()) + Math.max(...xs.flat())) / 2
+    const dy = at.y - (Math.min(...ys.flat()) + Math.max(...ys.flat())) / 2
+    const top = maxZ() + 1
+    const copies = [...r.nodes].sort((a, b) => a.z - b.z).map((n, i) => ({ ...n, id: newNodeId(), x: n.x + dx, y: n.y + dy, z: top + i, locked: false }))
     apply([...nodesRef.current, ...copies])
     setSelected(new Set(copies.map((c) => c.id)))
   }
@@ -497,7 +534,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     const onDown = (e: KeyboardEvent) => {
       const t = e.target instanceof Element ? e.target : document.body
       if (t.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('.viewer, .modal-backdrop, .pin-panel, .cm-backdrop')) return
-      const k = e.key.toLowerCase()
+      const k = keyOf(e)
       const sel = selected
       if (e.key === ' ') {
         setSpaceDown(true)
@@ -521,7 +558,9 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
       else if (e.ctrlKey && (e.key === '=' || e.key === '+')) zoomBy(1.25)
       else if (e.ctrlKey && e.key === '-') zoomBy(0.8)
       else if (e.ctrlKey && e.key === '0') setView((v) => ({ ...v, zoom: 1 }))
-      else if (e.ctrlKey && k === 'v') api.boardPaste().then((id) => (id ? addItems([id], center()) : flash('В буфере нет картинки')))
+      else if (e.ctrlKey && k === 'c') copySelected()
+      else if (e.ctrlKey && k === 'x') copySelected(true)
+      else if (e.ctrlKey && k === 'v') paste()
       else if (e.shiftKey && e.key === '!') fit()
       else if (e.shiftKey && k === 'h' && sel.size) patch(sel, (n) => ({ flipX: !n.flipX }))
       else if (e.shiftKey && k === 'v' && sel.size) patch(sel, (n) => ({ flipY: !n.flipY }))
@@ -652,7 +691,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     if (r?.startsWith('exp:')) return runExport(r)
     if (r === 'text') addText(at)
     else if (r === 'image') api.boardAddFromDialog(boardId, at).then(() => load(true))
-    else if (r === 'paste') api.boardPaste().then((id) => (id ? addItems([id], at) : flash('В буфере нет картинки')))
+    else if (r === 'paste') paste(at)
     else if (r === 'all') setSelected(new Set(nodesRef.current.map((n) => n.id)))
     else if (r === 'arrange') arrange()
     else if (r === 'fit') fit()
@@ -673,7 +712,10 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
         { id: 'pr-png', label: 'Скопировать одной картинкой' }
       ] },
       { label: 'Miro', icon: 'send', submenu: [
-        { id: 'miro-png', label: 'Скопировать доску картинкой' },
+        { id: 'miro-files', label: '1. Сохранить отдельными картинками' },
+        { id: 'miro-arrange', label: '2. Разложить скопированное в Miro' },
+        { id: 'miro-png', label: 'Скопировать одной картинкой' },
+        { type: 'separator' },
         { id: 'miro-open', label: 'Открыть Miro в браузере' }
       ] }
     ])
@@ -681,6 +723,8 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     else if (r === 'figma-file') run(() => api.boardSvg(boardId, 'file'), 'SVG сохранён — перетащите его в Figma')
     else if (r === 'figma-open') api.openApp('figma')
     else if (r === 'miro-open') api.openApp('miro')
+    else if (r === 'miro-files') run(() => api.miroFiles(boardId), 'Перетащите всё из папки в Miro, там выделите их и нажмите Ctrl+X')
+    else if (r === 'miro-arrange') run(() => api.miroArrange(boardId), 'Готово — вставьте в Miro (Ctrl+V)')
     else if (r === 'pr-open') run(() => api.openInPureRef(boardId), 'Открыто в PureRef')
     else if (r?.endsWith('-png')) run(() => api.exportBoard(boardId, 'clipboard'), 'Скопировано — вставьте Ctrl+V')
   }
@@ -1260,7 +1304,8 @@ function KeysPanel() {
     ['Ctrl+L', 'Заблокировать'],
     ['Shift+H / Shift+V', 'Отразить'],
     ['Ctrl+] / Ctrl+[', 'Выше / ниже'],
-    ['Ctrl+V', 'Вставить картинку'],
+    ['Ctrl+C / Ctrl+X', 'Копировать / вырезать'],
+    ['Ctrl+V', 'Вставить'],
     ['Shift+1', 'Показать всё'],
     ['Ctrl+0', 'Масштаб 100%'],
     ['Колесо', 'Масштаб'],

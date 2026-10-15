@@ -19,13 +19,15 @@ import { Updater } from './updater'
 import { browserExtInfo, extensionDir, openExtensionsPage, syncExtension } from './browserExt'
 import type { Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
-import { boardLayers, boardSvg, renderBoardPng } from './boards'
+import { boardLayers, boardScene, boardSvg, renderBoardPng } from './boards'
+import { foregroundTitle, pressCtrl, stopKeys, warmUpKeys } from './winKeys'
+import { arrangeMiroClip, arrangeMiroClipByShape, decodeMiroHtml, encodeMiroHtml, type FrameEntry, type LayoutEntry } from './miroClipboard'
 import { copyFolderToLibrary, exportFolderToDir, exportFolderToZip } from './folderOps'
 import { boundsOf, masonry } from '../shared/boardLayout'
 import { captureArea } from './capture'
 import { reverseSearch, type SearchEngine } from './websearch'
 import { installTools, TelegramBot, type TelegramConfig } from './telegram'
-import type { AiStatus, BoardData, ConvertOptions, FolderPatch, ItemPatch, MenuEntry, Query } from '../shared/types'
+import type { AiStatus, BoardData, BoardNode, ConvertOptions, FolderPatch, ItemPatch, MenuEntry, Query } from '../shared/types'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'stash', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }
@@ -49,6 +51,8 @@ let updater: Updater | null = null
 /** When the browser extension last talked to Stash (this run). */
 let extensionSeenAt: number | null = null
 let telegram: TelegramBot | null = null
+/** Board nodes from the last Ctrl+C on a board; `token` is what that copy put on the clipboard as text. */
+let copiedNodes: { token: string; nodes: BoardNode[] } | null = null
 let settings: SettingsManager | null = null
 /** What the user has selected in the grid — plugins can ask for it. */
 let uiState: { ids: string[]; folderId: string | null } = { ids: [], folderId: null }
@@ -414,8 +418,7 @@ function registerIpc(): void {
     const l = need()
     const board = l.getBoard(boardId)
     if (!board) throw new Error('Мудборд не найден')
-    const existing = new Set(board.data.nodes.map((n) => n.itemId))
-    const items = l.itemsLite(ids.filter((id) => !existing.has(id)))
+    const items = l.itemsLite([...new Set(ids)])
     if (!items.length) return board.data
     const b = boundsOf(board.data.nodes)
     const origin = at ?? (b ? { x: b.x + b.w + 80, y: b.y } : { x: 0, y: 0 })
@@ -481,8 +484,126 @@ function registerIpc(): void {
     notifyChanged()
     return data
   })
-  /** Ctrl+V on a board: import whatever image/file is on the clipboard and return its id. */
-  handle('boards:paste', async () => {
+  /**
+   * Ctrl+C on a board: the nodes stay in memory for pasting back onto a board, and the clipboard
+   * gets them as separate HTML images (for Miro and the like) plus a token that tells our paste
+   * they're still current.
+   */
+  handle('boards:copyNodes', async (boardId: string, nodes: BoardNode[]) => {
+    const l = need()
+    const board = l.getBoard(boardId)
+    if (!board || !nodes.length) return false
+    const token = `d3s3rt-board-nodes:${crypto.randomUUID()}`
+    copiedNodes = { token, nodes }
+    const items: Record<string, Blob> = { 'text/plain': new Blob([token], { type: 'text/plain' }) }
+    const part = { ...board, data: { ...board.data, nodes } }
+    try {
+      // Miro pastes HTML <img>s as separate pictures (in a row); the watcher below then lays them out.
+      // No flat PNG here: Miro would take it instead of the HTML (Export → copy as image does that).
+      // Frames go over as real Miro frames, so only the rest becomes pictures.
+      const { layers, frames } = await boardScene(l, part, { nativeFrames: true })
+      if (!layers.length) throw new Error('nothing to paste as pictures')
+      const imgs = await Promise.all(
+        layers.map(async (x) => {
+          const small = await sharp(x.png).resize(2000, 2000, { fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+          return `<img src="data:image/png;base64,${small.toString('base64')}" width="${Math.round(x.w / 2)}" height="${Math.round(x.h / 2)}">`
+        })
+      )
+      const html = `<div>${imgs.join('')}</div>`
+      items['text/html'] = new Blob([html], { type: 'text/html' })
+      watchMiroPaste(
+        layers.map((x, i) => ({ n: i + 1, cx: x.cx, cy: x.cy, w: x.w, h: x.h, frame: x.frame })),
+        frames,
+        html.length
+      )
+    } catch {
+      /* nothing drawable (e.g. only hidden nodes) — still paste back into the board */
+    }
+    await clipboard.write([new ClipboardItem(items)])
+    return true
+  })
+  /**
+   * After a board copy, for 10 minutes: once the user cuts/copies those pictures in Miro, rewrite
+   * Miro's clipboard so the next paste lays them out like the board. Miro only knows pictures it
+   * has uploaded itself, so the first paste (a row of separate images) can't be skipped — but
+   * while armed, Ctrl+V in a Miro window does paste → cut → paste for the user. Ctrl+V anywhere
+   * else is passed straight through.
+   */
+  type MiroWatch = { layout: LayoutEntry[]; frames: FrameEntry[]; htmlBytes: number; until: number; timer: NodeJS.Timeout; busy: boolean; autoCutAt?: number }
+  const PASTE_KEY = 'CommandOrControl+V'
+  const MIRO_TITLE = /\bmiro\b|online whiteboard/i
+  let miroWatch: MiroWatch | null = null
+  const stopMiroWatch = (w: MiroWatch) => {
+    clearInterval(w.timer)
+    if (miroWatch === w) {
+      miroWatch = null
+      globalShortcut.unregister(PASTE_KEY)
+    }
+  }
+  const watchMiroPaste = (layout: LayoutEntry[], frames: FrameEntry[], htmlBytes: number) => {
+    if (miroWatch) stopMiroWatch(miroWatch)
+    const w: MiroWatch = { layout, frames, htmlBytes, until: Date.now() + 10 * 60_000, busy: false, timer: setInterval(() => void tick(), 400) }
+    miroWatch = w
+    warmUpKeys()
+    const armed = () => miroWatch === w && !w.autoCutAt
+    const onPaste = async () => {
+      // Our own keystrokes must reach the window, not this hotkey.
+      globalShortcut.unregister(PASTE_KEY)
+      if (!armed() || !MIRO_TITLE.test(await foregroundTitle())) {
+        await pressCtrl('v')
+        if (armed()) globalShortcut.register(PASTE_KEY, () => void onPaste())
+        return
+      }
+      await pressCtrl('v')
+      // Give Miro time to upload the pasted pictures before cutting them.
+      await new Promise((r) => setTimeout(r, Math.min(8000, 1500 + (w.htmlBytes / 1e6) * 800)))
+      w.autoCutAt = Date.now()
+      await pressCtrl('x')
+    }
+    globalShortcut.unregister(PASTE_KEY)
+    globalShortcut.register(PASTE_KEY, () => void onPaste())
+    const tick = async () => {
+      if (w.busy) return
+      if (Date.now() > w.until || miroWatch !== w) return stopMiroWatch(w)
+      w.busy = true
+      try {
+        if (!(await clipboard.has('text/html'))) return
+        let html = ''
+        for (const item of await clipboard.read()) if (item.types.includes('text/html')) html += await ((await item.getType('text/html')) as Blob).text()
+        const clip = decodeMiroHtml(html)
+        if (!clip) return
+        const auto = !!w.autoCutAt && Date.now() - w.autoCutAt < 10_000
+        if (!arrangeMiroClipByShape(clip, w.layout, w.frames)) {
+          // Our own cut came back as something else (e.g. not all uploaded yet): put it back.
+          if (auto) {
+            stopMiroWatch(w)
+            await pressCtrl('v')
+            new Notification({ title: 'Не удалось разложить в Miro', body: 'Картинки вставлены обратно рядом. Попробуйте ещё раз: Ctrl+C в мудборде → Ctrl+V в Miro' }).show()
+          }
+          return
+        }
+        await clipboard.write([new ClipboardItem({ 'text/html': new Blob([encodeMiroHtml(clip)], { type: 'text/html' }) })])
+        stopMiroWatch(w)
+        if (auto) await pressCtrl('v')
+        else new Notification({ title: 'Раскладка для Miro готова', body: 'Вставьте в Miro (Ctrl+V) — картинки встанут как на мудборде' }).show()
+      } catch {
+        /* clipboard busy — try again next tick */
+      } finally {
+        w.busy = false
+      }
+    }
+  }
+  /** Ctrl+V on a board: our own copied nodes, or else whatever image/file is on the clipboard (imported). */
+  handle('boards:paste', async (): Promise<{ nodes: BoardNode[] } | { id: string } | null> => {
+    if (copiedNodes) {
+      for (const item of await clipboard.read()) {
+        if (item.types.includes('text/plain') && (await ((await item.getType('text/plain')) as Blob).text()) === copiedNodes.token) return { nodes: copiedNodes.nodes }
+      }
+    }
+    const id = await pasteImport()
+    return id ? { id } : null
+  })
+  const pasteImport = async (): Promise<string | null> => {
     if (!importer) return null
     const tmp = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'stash-paste-'))
     try {
@@ -503,7 +624,7 @@ function registerIpc(): void {
     } finally {
       await fs.promises.rm(tmp, { recursive: true, force: true })
     }
-  })
+  }
   handle('boards:duplicate', (id: string) => {
     const l = need()
     const board = l.getBoard(id)
@@ -583,31 +704,68 @@ function registerIpc(): void {
     saveConfig(config)
     return r.filePaths[0]
   }
+  /** Writes every board node as its own PNG into userData/<sub>/<board id>, numbered in paint order. */
+  const writeBoardLayers = async (boardId: string, sub: string) => {
+    const l = need()
+    const board = l.getBoard(boardId)
+    if (!board) throw new Error('Мудборд не найден')
+    const layers = await boardLayers(l, board)
+    if (!layers.length) throw new Error('На доске нет картинок')
+    const dir = path.join(app.getPath('userData'), sub, board.id)
+    await fs.promises.rm(dir, { recursive: true, force: true })
+    await fs.promises.mkdir(dir, { recursive: true })
+    const files: { file: string; cx: number; cy: number }[] = []
+    for (const [i, layer] of layers.entries()) {
+      // ';' and ',' are separators in PureRef's command line, so keep them out of file names.
+      const safe = layer.name.replace(/[<>:"/\\|?*;,]/g, '_').slice(0, 60)
+      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${safe}.png`)
+      await fs.promises.writeFile(file, layer.png)
+      files.push({ file, cx: layer.cx, cy: layer.cy })
+    }
+    const layout: LayoutEntry[] = layers.map((x, i) => ({ n: i + 1, cx: x.cx, cy: x.cy, w: x.w, h: x.h }))
+    // Next to the folder, not in it: the user drags the whole folder's contents into Miro.
+    await fs.promises.writeFile(`${dir}.json`, JSON.stringify(layout))
+    return { dir, files }
+  }
   /**
    * Opens the board in PureRef with every node as its own image in its place, via PureRef's
    * command line (`-c "load;<file>;<x>;<y>"`, x/y = image centre). Loaded in paint order.
    */
   handle('apps:pureref', async (boardId: string) => {
-    const l = need()
-    const board = l.getBoard(boardId)
-    if (!board) throw new Error('Мудборд не найден')
     const exe = await purerefExe()
     if (!exe) return false
-    const layers = await boardLayers(l, board)
-    if (!layers.length) throw new Error('На доске нет картинок')
-    const dir = path.join(app.getPath('userData'), 'pureref', board.id)
-    await fs.promises.rm(dir, { recursive: true, force: true })
-    await fs.promises.mkdir(dir, { recursive: true })
-    const args: string[] = []
-    for (const [i, layer] of layers.entries()) {
-      // ';' separates command arguments and ',' separates paths, so keep them out of file names.
-      const safe = layer.name.replace(/[<>:"/\\|?*;,]/g, '_').slice(0, 60)
-      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${safe}.png`)
-      await fs.promises.writeFile(file, layer.png)
-      args.push('-c', `load;${file.replace(/\\/g, '/')};${layer.cx};${layer.cy}`)
-    }
+    const { files } = await writeBoardLayers(boardId, 'pureref')
+    const args = files.flatMap((f) => ['-c', `load;${f.file.replace(/\\/g, '/')};${f.cx};${f.cy}`])
     spawn(exe, args, { detached: true, stdio: 'ignore' }).unref()
     return true
+  })
+  /** Miro: separate PNGs (relative sizes kept) in a folder opened in Explorer, ready to drag in. */
+  handle('apps:miroFiles', async (boardId: string) => {
+    const { dir } = await writeBoardLayers(boardId, 'miro')
+    await shell.openPath(dir)
+    return true
+  })
+  /**
+   * Miro, step 2: the user dragged those files into Miro and copied them there. Re-places the
+   * copied images by the saved layout and puts them back on the clipboard to paste.
+   */
+  handle('apps:miroArrange', async (boardId: string) => {
+    let html = ''
+    for (const item of await clipboard.read()) {
+      if (item.types.includes('text/html')) html += await ((await item.getType('text/html')) as Blob).text()
+    }
+    const clip = decodeMiroHtml(html)
+    if (!clip) throw new Error('В буфере нет картинок из Miro — выделите их в Miro и нажмите Ctrl+C')
+    let layout: LayoutEntry[]
+    try {
+      layout = JSON.parse(await fs.promises.readFile(path.join(app.getPath('userData'), 'miro', `${boardId}.json`), 'utf8'))
+    } catch {
+      throw new Error('Сначала: Отправить → Miro → Сохранить отдельными картинками')
+    }
+    const n = arrangeMiroClip(clip, layout)
+    if (!n) throw new Error('Скопированные в Miro картинки не из этого мудборда')
+    await clipboard.write([new ClipboardItem({ 'text/html': new Blob([encodeMiroHtml(clip)], { type: 'text/html' }) })])
+    return n
   })
   handle('apps:open', (name: 'figma' | 'miro' | 'pureref') => {
     const urls = { figma: 'figma://', miro: 'https://miro.com/app/dashboard/', pureref: 'https://www.pureref.com/download.php' }
@@ -1155,6 +1313,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  stopKeys()
   settings?.stop()
   telegram?.stop()
   plugins?.stopAll()

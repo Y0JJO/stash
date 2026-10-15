@@ -22,7 +22,7 @@ import { Inspector } from './components/Inspector'
 import { Sidebar } from './components/Sidebar'
 import { Viewer } from './components/Viewer'
 import { Welcome } from './components/Welcome'
-import { itemsLabel, loadPref, savePref } from './util'
+import { itemsLabel, keyOf, loadPref, savePref } from './util'
 
 export default function App() {
   const [lib, setLib] = useState<LibraryInfo | null | undefined>(undefined)
@@ -477,7 +477,7 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
       if (viewer !== null || quick || pinItem || boardItem || convertItems || showSettings || showPlugins || scope.type === 'board') return
       const t = e.target instanceof Element ? e.target : document.body
       const inField = !!t.closest('input, textarea, select')
-      const key = e.key.toLowerCase()
+      const key = keyOf(e)
 
       if (e.ctrlKey && e.key === ',') {
         e.preventDefault()

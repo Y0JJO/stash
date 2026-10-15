@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ItemLite } from '../../../shared/types'
 import { api, fileUrl } from '../api'
-import { clamp, loadPref, savePref } from '../util'
+import { clamp, keyOf, loadPref, savePref } from '../util'
 import { Icon } from './Icon'
 import { getSettings, useSettings } from '../settings'
 
@@ -278,7 +278,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector('.cm-backdrop')) return
-      const k = e.key.toLowerCase()
+      const k = keyOf(e)
       if (e.key === ' ' || k === 'k') toggle()
       else if (e.key === ',' || (e.ctrlKey && e.key === 'ArrowLeft')) stepFrames(-1)
       else if (e.key === '.' || (e.ctrlKey && e.key === 'ArrowRight')) stepFrames(1)
