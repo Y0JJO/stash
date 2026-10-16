@@ -1,135 +1,150 @@
 /**
- * Auto-tag vocabulary. CLIP understands English, so each Russian tag has an English prompt.
- * Within a group labels compete (softmax), so every group needs enough alternatives —
- * `tag: null` entries are "none of the above" sinks that absorb probability without producing a tag.
+ * Auto-tag vocabulary. CLIP understands English, so each Russian tag has English descriptions; each
+ * description goes through the group's templates and the tag's text vector is the average of them all
+ * (prompt ensembling — much steadier than a single phrase).
+ *
+ * Within a group the tags compete (softmax), so a group always has a "winner": `tag: null` entries are
+ * generic "none of the above" sinks that win for images the vocabulary doesn't cover, so nothing is tagged.
+ * The thresholds were tuned on a real library — keep them strict: a missing tag costs little, a wrong one
+ * makes the tag useless for search. After changing them, add a Library migration that resets
+ * autotag_state so existing items are re-tagged.
  */
 export interface VocabLabel {
   tag: string | null
-  prompt: string
+  /** English descriptions; `{}` in a template is replaced by each of them. */
+  d: string[]
 }
 
 export interface VocabGroup {
   name: string
+  templates: string[]
+  /** Minimum softmax probability for a tag. */
+  min: number
+  /** Besides the winner, other tags must reach this share of the winner's probability. */
+  ratio: number
   /** Maximum number of tags taken from the group. */
   max: number
-  /** Minimum softmax probability for a label to become a tag. */
-  min: number
   labels: VocabLabel[]
 }
 
-const L = (tag: string | null, prompt: string): VocabLabel => ({ tag, prompt })
+const S = (tag: string | null, ...d: string[]): VocabLabel => ({ tag, d })
+
+const PHOTO = ['a photo of {}.', 'a picture of {}.', 'an image showing {}.', 'a close-up of {}.']
+const LOOK = ['{}.', 'an image in the style of {}.']
 
 export const VOCAB: VocabGroup[] = [
   {
     name: 'subject',
-    max: 3,
-    min: 0.12,
+    templates: PHOTO,
+    min: 0.15,
+    ratio: 0.6,
+    max: 2,
     labels: [
-      L('портрет', 'a portrait of a person'),
-      L('люди', 'a group of people'),
-      L('ребёнок', 'a photo of a child'),
-      L('руки', 'a close-up of hands'),
-      L('кошка', 'a photo of a cat'),
-      L('собака', 'a photo of a dog'),
-      L('птица', 'a photo of a bird'),
-      L('лошадь', 'a photo of a horse'),
-      L('насекомое', 'a photo of an insect'),
-      L('рыба', 'a photo of fish underwater'),
-      L('животное', 'a photo of a wild animal'),
-      L('еда', 'a photo of food'),
-      L('напиток', 'a photo of a drink'),
-      L('цветы', 'a photo of flowers'),
-      L('растения', 'a photo of plants and leaves'),
-      L('лес', 'a photo of a forest'),
-      L('горы', 'a photo of mountains'),
-      L('море', 'a photo of the sea or ocean'),
-      L('пляж', 'a photo of a beach'),
-      L('озеро', 'a photo of a lake or river'),
-      L('небо', 'a photo of the sky and clouds'),
-      L('закат', 'a photo of a sunset'),
-      L('снег', 'a snowy winter landscape'),
-      L('пустыня', 'a photo of a desert'),
-      L('поле', 'a photo of a field or meadow'),
-      L('пейзаж', 'a landscape photo'),
-      L('город', 'a photo of a city'),
-      L('улица', 'a photo of a street'),
-      L('архитектура', 'a photo of architecture'),
-      L('здание', 'a photo of a building'),
-      L('интерьер', 'a photo of an interior room'),
-      L('мебель', 'a photo of furniture'),
-      L('автомобиль', 'a photo of a car'),
-      L('мотоцикл', 'a photo of a motorcycle'),
-      L('самолёт', 'a photo of an airplane'),
-      L('корабль', 'a photo of a ship or boat'),
-      L('поезд', 'a photo of a train'),
-      L('гаджет', 'a photo of an electronic device'),
-      L('компьютер', 'a photo of a computer'),
-      L('одежда', 'a fashion photo of clothing'),
-      L('обувь', 'a photo of shoes'),
-      L('украшения', 'a photo of jewelry'),
-      L('косметика', 'a photo of cosmetics'),
-      L('продукт', 'a product photo on a plain background'),
-      L('книга', 'a photo of a book'),
-      L('типографика', 'typography and lettering'),
-      L('логотип', 'a logo design'),
-      L('иконки', 'a set of icons'),
-      L('интерфейс', 'a screenshot of a user interface'),
-      L('веб-сайт', 'a screenshot of a website'),
-      L('мобильное приложение', 'a screenshot of a mobile app'),
-      L('инфографика', 'an infographic with charts'),
-      L('постер', 'a poster design'),
-      L('карта', 'a map'),
-      L('персонаж', 'a character design'),
-      L('робот', 'a robot'),
-      L('оружие', 'a weapon'),
-      L('космос', 'outer space with planets and stars'),
-      L('огонь', 'fire and flames'),
-      L('вода', 'water'),
-      L('абстракция', 'abstract art'),
-      L('узор', 'a seamless pattern'),
-      L('текстура', 'a close-up texture'),
-      L('градиент', 'a smooth color gradient'),
-      L(null, 'an image'),
-      L(null, 'a photo')
+      S('портрет', 'a person\'s face', 'a portrait of a person', 'a human face'),
+      S('люди', 'people', 'a person', 'a group of people'),
+      S('ребёнок', 'a child', 'a little kid'),
+      S('руки', 'human hands', 'a hand holding something'),
+      S('кошка', 'a cat', 'a kitten'),
+      S('собака', 'a dog', 'a puppy'),
+      S('птица', 'a bird'),
+      S('лошадь', 'a horse'),
+      S('насекомое', 'an insect', 'a butterfly', 'a bug'),
+      S('рыба', 'a fish', 'fish swimming underwater'),
+      S('животное', 'a wild animal', 'an animal'),
+      S('еда', 'food', 'a dish of food', 'a meal on a plate'),
+      S('напиток', 'a drink', 'a cup of coffee', 'a cocktail glass'),
+      S('цветы', 'flowers', 'a bouquet of flowers'),
+      S('растения', 'plants', 'green leaves'),
+      S('лес', 'a forest', 'trees in a forest'),
+      S('горы', 'mountains', 'a mountain range'),
+      S('море', 'the sea', 'ocean waves', 'a surfer on a wave'),
+      S('пляж', 'a sandy beach'),
+      S('озеро', 'a lake', 'a river'),
+      S('небо', 'the sky with clouds'),
+      S('закат', 'a sunset', 'a sunrise sky'),
+      S('снег', 'snow', 'a snowy landscape'),
+      S('пустыня', 'a desert', 'sand dunes'),
+      S('поле', 'a field', 'a meadow'),
+      S('город', 'a city', 'a cityscape', 'skyscrapers'),
+      S('улица', 'a street', 'a city street'),
+      S('архитектура', 'architecture', 'a building facade'),
+      S('интерьер', 'an interior of a room', 'an indoor space'),
+      S('мебель', 'furniture', 'a chair', 'a sofa'),
+      S('автомобиль', 'a car', 'a sports car', 'a car wheel'),
+      S('мотоцикл', 'a motorcycle', 'a motorbike', 'a motorcycle fuel tank'),
+      S('велосипед', 'a bicycle'),
+      S('самолёт', 'an airplane', 'an aircraft'),
+      S('корабль', 'a ship', 'a boat'),
+      S('поезд', 'a train'),
+      S('гаджет', 'an electronic gadget', 'a device with buttons', 'a camera'),
+      S('компьютер', 'a computer', 'a laptop', 'a keyboard'),
+      S('часы', 'a wristwatch', 'watch parts'),
+      S('одежда', 'clothing', 'a fashion outfit', 'fabric'),
+      S('обувь', 'shoes', 'a sneaker'),
+      S('украшения', 'jewelry', 'a ring', 'a necklace'),
+      S('косметика', 'cosmetics', 'makeup products'),
+      S('книга', 'a book'),
+      S('типографика', 'typography', 'large lettering', 'text in a bold font'),
+      S('логотип', 'a logo', 'a brand logo'),
+      S('иконки', 'a set of app icons'),
+      S('интерфейс', 'a user interface on a screen', 'an app interface with buttons and menus'),
+      S('веб-сайт', 'a website page in a browser'),
+      S('инфографика', 'an infographic with charts'),
+      S('постер', 'a poster', 'a graphic poster design'),
+      S('карта', 'a map'),
+      S('персонаж', 'a cartoon character', 'a game character'),
+      S('робот', 'a robot', 'a humanoid robot'),
+      S('оружие', 'a weapon', 'a gun', 'a sword'),
+      S('космос', 'outer space', 'planets and stars'),
+      S('огонь', 'fire', 'flames'),
+      S('абстракция', 'abstract art', 'abstract shapes'),
+      S('узор', 'a seamless repeating pattern'),
+      S('текстура', 'a texture', 'a surface texture close-up'),
+      S('градиент', 'a smooth color gradient background'),
+      // sinks: generic content that is not worth a tag
+      S(null, 'something'), S(null, 'an object'), S(null, 'a scene'), S(null, 'a thing'), S(null, 'stuff'),
+      S(null, 'a random image'), S(null, 'a blurry image'), S(null, 'a dark image'), S(null, 'a colorful image')
     ]
   },
   {
     name: 'style',
+    templates: LOOK,
+    min: 0.7,
+    ratio: 1,
     max: 1,
-    min: 0.3,
     labels: [
-      L('фото', 'a photograph'),
-      L('иллюстрация', 'a digital illustration'),
-      L('3D', 'a 3D render'),
-      L('аниме', 'an anime drawing'),
-      L('пиксель-арт', 'pixel art'),
-      L('скетч', 'a pencil sketch'),
-      L('акварель', 'a watercolor painting'),
-      L('живопись', 'an oil painting'),
-      L('вектор', 'flat vector graphics'),
-      L('скриншот', 'a screenshot'),
-      L('концепт-арт', 'concept art'),
-      L('коллаж', 'a collage'),
-      L('low-poly', 'low poly 3D art'),
-      L('чертёж', 'a technical drawing or blueprint')
+      S('фото', 'a real photograph', 'a camera photo'),
+      S('иллюстрация', 'a digital illustration', 'a drawing'),
+      S('3D', 'a 3D render', 'computer generated 3D graphics', 'CGI'),
+      S('аниме', 'anime art'),
+      S('пиксель-арт', 'pixel art', '8-bit pixel graphics'),
+      S('скетч', 'a pencil sketch'),
+      S('акварель', 'a watercolor painting'),
+      S('живопись', 'an oil painting'),
+      S('вектор', 'flat vector graphics'),
+      S('скриншот', 'a screenshot of a computer screen', 'a screen capture of software'),
+      S('концепт-арт', 'concept art'),
+      S('коллаж', 'a collage of several pictures'),
+      S('low-poly', 'low poly geometric 3D art'),
+      S('чертёж', 'a technical blueprint drawing')
     ]
   },
   {
     name: 'mood',
+    templates: LOOK,
+    min: 0.6,
+    ratio: 1,
     max: 1,
-    min: 0.35,
     labels: [
-      L('ночь', 'a photo taken at night'),
-      L('неон', 'neon lights'),
-      L('тёмное', 'a dark, low-key image'),
-      L('светлое', 'a bright, high-key image'),
-      L('чёрно-белое', 'a black and white image'),
-      L('пастель', 'soft pastel colors'),
-      L('минимализм', 'a minimalist composition'),
-      L('винтаж', 'a vintage retro image'),
-      L(null, 'an ordinary image'),
-      L(null, 'a colorful image'),
-      L(null, 'a normal photo in daylight')
+      S('ночь', 'a scene at night'),
+      S('неон', 'glowing neon lights'),
+      S('тёмное', 'a very dark low-key image'),
+      S('светлое', 'a bright white high-key image'),
+      S('чёрно-белое', 'a black and white image'),
+      S('пастель', 'soft pastel colors'),
+      S('минимализм', 'a minimalist composition with lots of empty space'),
+      S('винтаж', 'a vintage retro photo'),
+      S(null, 'an ordinary image'), S(null, 'a colorful image'), S(null, 'a normal photo in daylight'), S(null, 'an image')
     ]
   }
 ]

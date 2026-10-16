@@ -85,10 +85,18 @@ export class Clip {
 }
 
 interface GroupVectors {
-  max: number
   min: number
+  ratio: number
+  max: number
   tags: (string | null)[]
   vecs: Float32Array[]
+}
+
+/** The average of several unit vectors, back on the unit sphere. */
+function mean(vecs: Float32Array[]): Float32Array {
+  const sum = new Float32Array(vecs[0].length)
+  for (const v of vecs) for (let i = 0; i < v.length; i++) sum[i] += v[i]
+  return normalize(sum)
 }
 
 /** Background queue: embeds each thumbnail with CLIP and assigns tags from the vocabulary. */
@@ -161,12 +169,12 @@ export class AutoTagger {
   private async embedVocab(): Promise<GroupVectors[]> {
     const out: GroupVectors[] = []
     for (const g of VOCAB) {
-      out.push({
-        max: g.max,
-        min: g.min,
-        tags: g.labels.map((l) => l.tag),
-        vecs: await this.clip.embedTexts(g.labels.map((l) => l.prompt))
-      })
+      const vecs: Float32Array[] = []
+      for (const l of g.labels) {
+        const prompts = l.d.flatMap((d) => g.templates.map((t) => t.replace('{}', d)))
+        vecs.push(mean(await this.clip.embedTexts(prompts)))
+      }
+      out.push({ min: g.min, ratio: g.ratio, max: g.max, tags: g.labels.map((l) => l.tag), vecs })
     }
     return out
   }
@@ -198,9 +206,12 @@ export class AutoTagger {
       const m = Math.max(...logits)
       const ex = logits.map((l) => Math.exp(l - m))
       const z = ex.reduce((a, b) => a + b, 0)
-      ex.map((e, i) => ({ tag: g.tags[i], p: e / z }))
-        .sort((a, b) => b.p - a.p)
-        .filter((x): x is { tag: string; p: number } => x.tag !== null && x.p >= g.min)
+      const ranked = ex.map((e, i) => ({ tag: g.tags[i], p: e / z })).sort((a, b) => b.p - a.p)
+      // A sink on top means the image is outside this group's vocabulary.
+      const top = ranked[0]
+      if (!top.tag || top.p < g.min) continue
+      ranked
+        .filter((x): x is { tag: string; p: number } => x.tag !== null && x.p >= g.min && x.p >= g.ratio * top.p)
         .slice(0, g.max)
         .forEach((x) => tags.push(x.tag))
     }

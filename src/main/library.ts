@@ -220,6 +220,10 @@ export class Library {
         `)
       })
     }
+    if (version < 5) {
+      // v5: new auto-tag vocabulary and stricter thresholds — re-tag everything (manual tags are kept).
+      this.db.exec('UPDATE items SET autotag_state = 0; PRAGMA user_version = 5;')
+    }
   }
 
   private tx<T>(fn: () => T): T {
