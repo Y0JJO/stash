@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BoardInfo, Counts, Filters, Folder, ImportProgress, ItemLite, LibraryInfo, MenuEntry, Query, Scope, SortKey, TagCount } from '../../shared/types'
 import { NO_FILTERS } from '../../shared/types'
 import { api, droppedPaths } from './api'
-import { activeFilterCount, FilterBar } from './components/FilterBar'
+import { FilterBar } from './components/FilterBar'
 import { Grid } from './components/Grid'
 import { Peek, type PeekState } from './components/Peek'
 import { QuickSwitch } from './components/QuickSwitch'
@@ -82,7 +82,6 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
   const [tileSize, setTileSize] = useState<number>(() => loadPref('tileSize', 220))
   const [showLabels, setShowLabels] = useState<boolean>(() => loadPref('showLabels', true))
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  const [showFilters, setShowFilters] = useState<boolean>(() => loadPref('showFilters', false))
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9))
   const [hoverPreview, setHoverPreview] = useState<boolean>(() => loadPref('hoverPreview', false))
   const [soundOn, setSoundOn] = useState<boolean>(() => loadPref('soundOn', false))
@@ -131,10 +130,9 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
     savePref('desc', desc)
     savePref('tileSize', tileSize)
     savePref('showLabels', showLabels)
-    savePref('showFilters', showFilters)
     savePref('hoverPreview', hoverPreview)
     savePref('soundOn', soundOn)
-  }, [kind, sort, desc, tileSize, showLabels, showFilters, hoverPreview, soundOn])
+  }, [kind, sort, desc, tileSize, showLabels, hoverPreview, soundOn])
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQ(search), 150)
@@ -599,20 +597,6 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
               </button>
             ))}
           </div>
-          {color && (
-            <button className="color-chip" onClick={() => setColor(null)} title="Сбросить фильтр по цвету">
-              <span style={{ background: color }} />
-              <Icon name="close" size={12} />
-            </button>
-          )}
-          <button
-            className={`icon-btn${showFilters || activeFilterCount(filters, color) ? ' on' : ''}`}
-            onClick={() => setShowFilters((v) => !v)}
-            title="Фильтры"
-          >
-            <Icon name="filter" size={15} />
-            Фильтры{activeFilterCount(filters, color) ? ` · ${activeFilterCount(filters, color)}` : ''}
-          </button>
           <select value={effSort} onChange={(e) => changeSort(e.target.value as SortKey)} title={sortFolder ? 'Сортировка этой папки' : 'Сортировка'}>
             {SORTS.map((s) => (
               <option key={s.key} value={s.key}>
@@ -765,9 +749,7 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
           />
         ) : (
         <>
-        {(showFilters || activeFilterCount(filters, color) > 0) && (
-          <FilterBar filters={filters} onFilters={setFilters} color={color} onColor={setColor} allTags={tags.map((t) => t.name)} version={version} />
-        )}
+        <FilterBar filters={filters} onFilters={setFilters} color={color} onColor={setColor} query={query} folders={folders} version={version} />
         <div className="grid-wrap">
         <Grid
           items={items}

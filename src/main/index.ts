@@ -521,8 +521,20 @@ function registerIpc(): void {
     }
     await clipboard.write([new ClipboardItem(items)])
     // Figma gets the same nodes as an SVG file (built in the background, pasted on Ctrl+V in Figma).
-    forApps = { token, items, figmaFile: figmaSvgFile(l, part).catch(() => null) }
+    let pureref: Promise<string[]> | null = null
+    const copy = (forApps = {
+      token,
+      items,
+      figmaFile: figmaSvgFile(l, part).catch(() => null),
+      // Built on the first paste into PureRef only.
+      pureref: () => (pureref ??= purerefFiles(l, part))
+    })
     armPasteHook()
+    // The moodboard says "ready to paste" once everything (Figma's file included) is built —
+    // unless the user copied again meanwhile.
+    void copy.figmaFile.then(() => {
+      if (forApps === copy) send('boards:copyReady', { count: nodes.length, frames: nodes.filter((n) => n.type === 'frame').length })
+    })
     return true
   })
   /** Writes the board as a Figma SVG (real frames, full-size pictures) to userData/figma. */
@@ -541,12 +553,19 @@ function registerIpc(): void {
    * For 10 minutes after a board copy, Ctrl+V is caught system-wide and routed by the window in
    * front: Miro gets the paste → cut → paste dance (see watchMiroPaste), Figma gets the board as an
    * SVG file (Figma ignores SVG *text* over ~120–250 KB, but imports files fine, with nested <svg>
-   * as real frames), everything else just gets Ctrl+V passed through.
+   * as real frames), PureRef gets the pictures as separate files (see purerefPaste), everything
+   * else just gets Ctrl+V passed through.
    */
   const PASTE_KEY = 'CommandOrControl+V'
   const MIRO_TITLE = /\bmiro\b|online whiteboard/i
   const isFigma = (w: { process: string; title: string }) => /^figma$/i.test(w.process) || /figma/i.test(w.title)
-  let forApps: { token: string; items: Record<string, Blob>; figmaFile: Promise<string | null> } | null = null
+  let forApps: {
+    token: string
+    items: Record<string, Blob>
+    figmaFile: Promise<string | null>
+    pureref: () => Promise<string[]>
+  } | null = null
+  const isPureRef = (w: { process: string }) => /^pureref$/i.test(w.process)
   let hookUntil = 0
   const hookOn = () => Date.now() < hookUntil
   const register = () => {
@@ -573,14 +592,42 @@ function registerIpc(): void {
     const front = await foregroundWindow()
     if (miroWatch && !miroWatch.autoCutAt && MIRO_TITLE.test(front.title)) return void (await miroAutoPaste(miroWatch))
     const copy = forApps
+    if (copy && isPureRef(front)) return void (await purerefPaste(copy).catch(() => pressThrough('v')))
     const file = copy && isFigma(front) ? await copy.figmaFile : null
     if (!copy || !file) return void (await pressThrough('v'))
     await copyFiles([file])
     await pressThrough('v')
-    // Put our own copy back once Figma has read the file, so Miro / board paste keep working.
+    restoreCopyLater(copy)
+  }
+  /** Puts our own copy back once the target app has read its paste, so the next Ctrl+V works too. */
+  const restoreCopyLater = (copy: NonNullable<typeof forApps>) =>
     setTimeout(() => {
       if (forApps === copy) void clipboard.write([new ClipboardItem(copy.items)]).catch(() => {})
     }, 2500)
+  /**
+   * PureRef: the pictures go into the open board as separate files, and PureRef lays them out its
+   * own way. Its clipboard can't carry our layout — PureRef pastes from its own memory and only
+   * uses "pureref/binary" as a marker — and a pasted .pur opens as a new project. The board's
+   * layout is available through Send → PureRef, which opens it in a new window.
+   */
+  const purerefPaste = async (copy: NonNullable<typeof forApps>) => {
+    await copyFiles(await copy.pureref())
+    await pressThrough('v')
+    restoreCopyLater(copy)
+  }
+  /** The copy's pictures as PNG files for PureRef — frames left out (PureRef has none). */
+  const purerefFiles = async (l: Library, board: Board): Promise<string[]> => {
+    const { layers } = await boardScene(l, board, { nativeFrames: true })
+    const dir = path.join(app.getPath('userData'), 'pureref-paste')
+    await fs.promises.rm(dir, { recursive: true, force: true })
+    await fs.promises.mkdir(dir, { recursive: true })
+    const files: string[] = []
+    for (const [i, layer] of layers.entries()) {
+      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${layer.name.replace(/[<>:"/\\|?*]/g, '_').slice(0, 60)}.png`)
+      await fs.promises.writeFile(file, layer.png)
+      files.push(file)
+    }
+    return files
   }
 
   /**
@@ -750,10 +797,8 @@ function registerIpc(): void {
     return r.filePaths[0]
   }
   /** Writes every board node as its own PNG into userData/<sub>/<board id>, numbered in paint order. */
-  const writeBoardLayers = async (boardId: string, sub: string) => {
+  const writeBoardLayers = async (board: Board, sub: string) => {
     const l = need()
-    const board = l.getBoard(boardId)
-    if (!board) throw new Error('Мудборд не найден')
     const layers = await boardLayers(l, board)
     if (!layers.length) throw new Error('На доске нет картинок')
     const dir = path.join(app.getPath('userData'), sub, board.id)
@@ -779,14 +824,18 @@ function registerIpc(): void {
   handle('apps:pureref', async (boardId: string) => {
     const exe = await purerefExe()
     if (!exe) return false
-    const { files } = await writeBoardLayers(boardId, 'pureref')
+    const board = need().getBoard(boardId)
+    if (!board) throw new Error('Мудборд не найден')
+    const { files } = await writeBoardLayers(board, 'pureref')
     const args = files.flatMap((f) => ['-c', `load;${f.file.replace(/\\/g, '/')};${f.cx};${f.cy}`])
     spawn(exe, args, { detached: true, stdio: 'ignore' }).unref()
     return true
   })
   /** Miro: separate PNGs (relative sizes kept) in a folder opened in Explorer, ready to drag in. */
   handle('apps:miroFiles', async (boardId: string) => {
-    const { dir } = await writeBoardLayers(boardId, 'miro')
+    const board = need().getBoard(boardId)
+    if (!board) throw new Error('Мудборд не найден')
+    const { dir } = await writeBoardLayers(board, 'miro')
     await shell.openPath(dir)
     return true
   })
@@ -820,6 +869,7 @@ function registerIpc(): void {
   })
 
   handle('items:query', (q: Query) => need().query(q))
+  handle('items:facets', (q: Query) => need().facets(q))
   handle('items:exts', () => need().exts())
   handle('items:hasVector', (id: string) => need().hasVector(id))
   handle('items:webSearch', async (id: string, engine: SearchEngine) => {

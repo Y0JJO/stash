@@ -37,10 +37,8 @@ interface Props {
 export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath, onLock, unlocked }: Props) {
   const prefs = useSettings()
   const [editing, setEditing] = useState<string | null>(null)
-  const [editingTag, setEditingTag] = useState<string | null>(null)
   const [editingBoard, setEditingBoard] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<string[]>(() => loadPref('collapsed', []))
-  const [tagFilter, setTagFilter] = useState('')
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [autoTagFor, setAutoTagFor] = useState<Folder | null>(null)
   const [password, setPassword] = useState<{ folder: Folder; mode: 'set' | 'remove' } | null>(null)
@@ -281,21 +279,6 @@ export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const tagMenu = async (t: TagCount) => {
-    const r = await api.menu([
-      { id: 'rename', label: 'Переименовать', icon: 'rename' },
-      { type: 'separator' },
-      { id: 'delete', label: 'Удалить тег', icon: 'trash', danger: true }
-    ])
-    if (r === 'rename') setEditingTag(t.name)
-    else if (r === 'delete') {
-      if (await api.confirm(`Удалить тег «${t.name}»?`, `Он будет снят с ${t.count} элементов.`)) {
-        await api.deleteTag(t.name)
-        if (scope.type === 'tag' && scope.name === t.name) onScope({ type: 'all' })
-      }
-    }
-  }
-
   const dropProps = (targetKey: string, onDrop: (e: React.DragEvent) => void) => ({
     onDragOver: (e: React.DragEvent) => {
       if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes(FOLDER_MIME)) {
@@ -387,7 +370,6 @@ export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath
     </div>
   )
 
-  const shownTags = tagFilter ? tags.filter((t) => t.name.toLowerCase().includes(tagFilter.toLowerCase())) : tags
   const pinned = folders.filter((f) => f.pinned)
 
   const allFixed: { s: Scope; label: string; icon: string; count: number; show: boolean }[] = [
@@ -397,7 +379,7 @@ export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath
     { s: { type: 'trash' }, label: 'Корзина', icon: 'trash', count: counts.trash, show: true }
   ]
   const fixed = allFixed.filter((f) => f.show)
-  const hide = [!prefs.showQuickAccess && 'hide-quick', !prefs.showFolders && 'hide-folders', !prefs.showBoards && 'hide-boards', !prefs.showTags && 'hide-tags'].filter(Boolean).join(' ')
+  const hide = [!prefs.showQuickAccess && 'hide-quick', !prefs.showFolders && 'hide-folders', !prefs.showBoards && 'hide-boards'].filter(Boolean).join(' ')
 
   return (
     <nav className={`sidebar ${hide}`}>
@@ -523,56 +505,6 @@ export function Sidebar({ scope, onScope, folders, tags, counts, boards, libPath
           {!boards.length && <div className="side-hint">Соберите мудборд для проекта из своих ассетов</div>}
         </div>
 
-        <div className="side-header sec-tags">
-          <span>Теги</span>
-          <span className="side-count">{tags.length || ''}</span>
-        </div>
-        {tags.length > 8 && <input className="side-filter" placeholder="Фильтр тегов" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} />}
-        <div className="side-group">
-          {shownTags.map((t) => {
-            const s: Scope = { type: 'tag', name: t.name }
-            return (
-              <div
-                key={t.name}
-                className={`side-row${isActive(s) ? ' active' : ''}`}
-                onClick={() => onScope(s)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  tagMenu(t)
-                }}
-              >
-                <span className="side-icon">
-                  <Icon name="hash" size={13} />
-                </span>
-                {editingTag === t.name ? (
-                  <input
-                    className="side-edit"
-                    autoFocus
-                    defaultValue={t.name}
-                    onFocus={(e) => e.target.select()}
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={async (e) => {
-                      const to = e.target.value.trim()
-                      setEditingTag(null)
-                      if (to && to !== t.name) {
-                        await api.renameTag(t.name, to)
-                        if (isActive(s)) onScope({ type: 'tag', name: to })
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                      if (e.key === 'Escape') setEditingTag(null)
-                    }}
-                  />
-                ) : (
-                  <span className="side-name">{t.name}</span>
-                )}
-                <span className="side-count">{t.count}</span>
-              </div>
-            )
-          })}
-          {!tags.length && <div className="side-hint">Тегов пока нет</div>}
-        </div>
       </div>
       {notice && <div className="side-notice">{notice}</div>}
       <AiStatusBar />

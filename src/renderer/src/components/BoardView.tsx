@@ -4,7 +4,7 @@ import { NO_FILTERS } from '../../../shared/types'
 import { masonry, newNodeId } from '../../../shared/boardLayout'
 import { nodeSvg, PALETTE_W, paletteHeight } from '../../../shared/boardSvg'
 import { api, droppedPaths, fileUrl, thumbUrl } from '../api'
-import { BROWSER_IMAGE, clamp, keyOf } from '../util'
+import { BROWSER_IMAGE, clamp, itemsLabel, keyOf, plural } from '../util'
 import { Icon } from './Icon'
 import { STICKER_ICONS } from '../../../shared/icons'
 
@@ -85,6 +85,9 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
   const [draft, setDraft] = useState<BoardNode | null>(null)
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /** Copy progress / "ready to paste" card, separate from the short toasts. */
+  const [copyNote, setCopyNote] = useState<{ busy: boolean; title: string } | null>(null)
+  const copyNoteTimer = useRef<number | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
 
   const nodesRef = useRef(nodes)
@@ -295,17 +298,31 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     const picked = all.filter((n) => selected.has(n.id) || frames.some((f) => n.id !== f.id && n.x >= f.x && n.y >= f.y && n.x + n.w <= f.x + f.w && n.y + n.h <= f.y + f.h))
     if (!picked.length) return
     try {
+      window.clearTimeout(copyNoteTimer.current)
+      setCopyNote({ busy: true, title: cut ? 'Вырезаю…' : 'Копирую…' })
       await api.boardCopyNodes(boardId, picked)
       if (cut) {
         const gone = new Set(picked.filter((n) => !n.locked).map((n) => n.id))
         apply(all.filter((n) => !gone.has(n.id)))
         setSelected(new Set())
       }
-      flash(`${cut ? 'Вырезано' : 'Скопировано'} — Ctrl+V вставит с раскладкой и в Miro, и в Figma`)
+      // The "ready to paste" card comes with boards:copyReady, once Figma's file is built too.
     } catch (e) {
+      setCopyNote(null)
       flash(errText(e))
     }
   }
+
+  useEffect(
+    () =>
+      api.onCopyReady(({ count, frames }) => {
+        const what = `${itemsLabel(count)}${frames ? `, ${frames} ${plural(frames, 'фрейм', 'фрейма', 'фреймов')}` : ''}`
+        setCopyNote({ busy: false, title: `Скопировано: ${what}` })
+        window.clearTimeout(copyNoteTimer.current)
+        copyNoteTimer.current = window.setTimeout(() => setCopyNote(null), 4000)
+      }),
+    []
+  )
 
   /** Ctrl+V: copied board nodes keep their layout, centred on `at`; otherwise an image from the clipboard. */
   const paste = async (at = center()) => {
@@ -1050,6 +1067,15 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
 
       {drawer && !preview && <AssetDrawer onBoard={new Set(nodes.map((n) => n.itemId).filter(Boolean) as string[])} onAdd={(ids) => addItems(ids, center())} onClose={() => setDrawer(false)} version={version} />}
       {toast && <div className="board-toast">{toast}</div>}
+      {copyNote && (
+        <div className={`board-copy-note${copyNote.busy ? ' busy' : ''}`}>
+          <Icon name={copyNote.busy ? 'copy' : 'check'} size={22} />
+          <div>
+            <div className="board-copy-title">{copyNote.title}</div>
+            {!copyNote.busy && <div className="board-copy-sub">Ctrl+V — вставить с раскладкой в мудборд, Miro, Figma или PureRef</div>}
+          </div>
+        </div>
+      )}
     </div>
   )
 

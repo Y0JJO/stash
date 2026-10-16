@@ -304,7 +304,6 @@ function SidebarPane({ s, set }: PaneProps) {
           <Check label="Быстрый доступ" value={s.showQuickAccess} onChange={(v) => set({ showQuickAccess: v })} />
           <Check label="Папки" value={s.showFolders} onChange={(v) => set({ showFolders: v })} />
           <Check label="Мудборды" value={s.showBoards} onChange={(v) => set({ showBoards: v })} />
-          <Check label="Теги" value={s.showTags} onChange={(v) => set({ showTags: v })} />
         </div>
         <div className="set-note">«Все» и «Корзина» показываются всегда.</div>
       </Card>

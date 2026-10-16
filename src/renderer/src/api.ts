@@ -8,6 +8,7 @@ import type {
   BoardNode,
   Counts,
   ExtCount,
+  FacetCounts,
   Folder,
   FolderPatch,
   ImportProgress,
@@ -97,6 +98,7 @@ export const api = {
   revealLibrary: () => call<void>('lib:reveal'),
 
   query: (q: Query) => call<ItemLite[]>('items:query', q),
+  facets: (q: Query) => call<FacetCounts>('items:facets', q),
   exts: () => call<ExtCount[]>('items:exts'),
   hasVector: (id: string) => call<boolean>('items:hasVector', id),
   webSearch: (id: string, engine: string) => call<void>('items:webSearch', id, engine),
@@ -203,6 +205,8 @@ export const api = {
   miroFiles: (boardId: string) => call<boolean>('apps:miroFiles', boardId),
   miroArrange: (boardId: string) => call<number>('apps:miroArrange', boardId),
   onBoardChanged: (cb: (id: string) => void) => b.on('boards:changed', cb),
+  /** A board copy (Ctrl+C) is fully ready to paste anywhere. */
+  onCopyReady: (cb: (info: { count: number; frames: number }) => void) => b.on('boards:copyReady', cb),
   plugins: () => call<PluginInfo[]>('plugins:list'),
   runPlugin: (id: string) => call<void>('plugins:run', id),
   uninstallPlugin: (id: string) => call<void>('plugins:uninstall', id),

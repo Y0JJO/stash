@@ -104,19 +104,47 @@ export type Scope =
 
 export type SortKey = 'added' | 'name' | 'size' | 'rating' | 'duration' | 'random'
 
-export type Shape = 'any' | 'landscape' | 'portrait' | 'square' | 'panorama'
+export type Shape = 'landscape' | 'portrait' | 'square' | 'panorama'
 
-export interface Filters {
-  shape: Shape
-  minRating: number
-  exts: string[]
-  minWidth: number
-  minHeight: number
-  /** All of these tags must be present. */
-  tags: string[]
+/** One multi-value filter: an item must match `inc` (if any are picked) and none of `exc`. */
+export interface Facet<T> {
+  inc: T[]
+  exc: T[]
 }
 
-export const NO_FILTERS: Filters = { shape: 'any', minRating: 0, exts: [], minWidth: 0, minHeight: 0, tags: [] }
+/** For tags and folders: picked values combine as "any of them" or "all of them". */
+export type FacetRule = 'any' | 'all'
+
+/** '' stands for "no tags" / "no folder" in the tag and folder facets. */
+export interface Filters {
+  tags: Facet<string> & { rule: FacetRule }
+  folders: Facet<string> & { rule: FacetRule }
+  shapes: Facet<Shape>
+  ratings: Facet<number>
+  exts: Facet<string>
+  minWidth: number
+  minHeight: number
+}
+
+export type FacetKey = 'tags' | 'folders' | 'shapes' | 'ratings' | 'exts'
+
+export const NO_FILTERS: Filters = {
+  tags: { inc: [], exc: [], rule: 'any' },
+  folders: { inc: [], exc: [], rule: 'any' },
+  shapes: { inc: [], exc: [] },
+  ratings: { inc: [], exc: [] },
+  exts: { inc: [], exc: [] },
+  minWidth: 0,
+  minHeight: 0
+}
+
+export interface FacetValue {
+  key: string
+  count: number
+}
+
+/** How many items of the current view (scope, search and the other filters) each filter value would leave. */
+export type FacetCounts = Record<FacetKey, FacetValue[]>
 
 export interface Query {
   scope: Scope

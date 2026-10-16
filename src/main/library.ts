@@ -9,6 +9,13 @@ import type {
   BoardInfo,
   Counts,
   ExtCount,
+  Facet,
+  FacetCounts,
+  FacetKey,
+  FacetRule,
+  FacetValue,
+  Filters,
+  Shape,
   Folder,
   FolderPatch,
   Item,
@@ -74,6 +81,13 @@ CREATE TABLE item_tags (
 );
 CREATE INDEX item_tags_tag ON item_tags(tag);
 `
+
+const SHAPES: Record<Shape, string> = {
+  landscape: 'i.width > i.height * 1.1',
+  portrait: 'i.height > i.width * 1.1',
+  square: 'i.width BETWEEN i.height * 0.9 AND i.height * 1.1',
+  panorama: '(i.width >= i.height * 2 OR i.height >= i.width * 2)'
+}
 
 const LITE = `i.id, i.name, i.ext, i.kind, i.width, i.height, i.duration, i.rating, i.size,
   i.thumb_state AS thumb, i.thumb_v AS thumbV, i.added_at AS addedAt`
@@ -264,7 +278,8 @@ export class Library {
 
   // ---------- items ----------
 
-  query(q: Query): ItemLite[] {
+  /** The WHERE terms of a query; `skip` leaves one filter out (for counting that filter's values). */
+  private conditions(q: Query, skip?: FacetKey): { where: string[]; params: Param[] } {
     const where: string[] = [q.scope.type === 'trash' ? 'i.deleted_at IS NOT NULL' : 'i.deleted_at IS NULL']
     const params: Param[] = []
 
@@ -304,36 +319,7 @@ export class Library {
       params.push(q.kind)
     }
 
-    const f = q.filters
-    if (f) {
-      const shapes: Record<string, string> = {
-        landscape: 'i.width > i.height * 1.1',
-        portrait: 'i.height > i.width * 1.1',
-        square: 'i.width BETWEEN i.height * 0.9 AND i.height * 1.1',
-        panorama: '(i.width >= i.height * 2 OR i.height >= i.width * 2)'
-      }
-      if (shapes[f.shape]) where.push(`i.width > 0 AND i.height > 0 AND ${shapes[f.shape]}`)
-      if (f.minRating > 0) {
-        where.push('i.rating >= ?')
-        params.push(f.minRating)
-      }
-      if (f.exts.length) {
-        where.push(`i.ext IN (${marks(f.exts.length)})`)
-        params.push(...f.exts)
-      }
-      if (f.minWidth > 0) {
-        where.push('i.width >= ?')
-        params.push(f.minWidth)
-      }
-      if (f.minHeight > 0) {
-        where.push('i.height >= ?')
-        params.push(f.minHeight)
-      }
-      for (const tag of f.tags) {
-        where.push('EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id AND t.tag = ?)')
-        params.push(tag)
-      }
-    }
+    if (q.filters) this.filterConditions(q.filters, skip, where, params)
 
     for (const term of q.search.trim().split(/\s+/).filter(Boolean)) {
       const like = `%${term.replace(/[\\%_]/g, (m) => '\\' + m)}%`
@@ -342,6 +328,80 @@ export class Library {
         OR EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id AND t.tag LIKE ? ESCAPE '\\'))`)
       params.push(like, like, like, like, like)
     }
+    return { where, params }
+  }
+
+  private filterConditions(f: Filters, skip: FacetKey | undefined, where: string[], params: Param[]): void {
+    /** Adds "matches any / all of inc, none of exc" for one facet; `one(v)` is the SQL for a single value. */
+    const facet = <T extends Param>(key: FacetKey, fc: Facet<T>, rule: FacetRule, one: (v: T) => [string, Param[]]) => {
+      if (key === skip) return
+      const part = (vals: T[], join: string) => {
+        const sql: string[] = []
+        for (const v of vals) {
+          const [cond, p] = one(v)
+          sql.push(cond)
+          params.push(...p)
+        }
+        return `(${sql.join(join)})`
+      }
+      if (fc.inc.length) where.push(part(fc.inc, rule === 'all' ? ' AND ' : ' OR '))
+      if (fc.exc.length) where.push(`NOT ${part(fc.exc, ' OR ')}`)
+    }
+    facet('tags', f.tags, f.tags.rule, (t) =>
+      t === ''
+        ? ['NOT EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id)', []]
+        : ['EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id AND t.tag = ?)', [t]]
+    )
+    facet('folders', f.folders, f.folders.rule, (id) =>
+      id === ''
+        ? ['NOT EXISTS (SELECT 1 FROM item_folders x WHERE x.item_id = i.id)', []]
+        : ['EXISTS (SELECT 1 FROM item_folders x WHERE x.item_id = i.id AND x.folder_id = ?)', [id]]
+    )
+    facet('shapes', f.shapes, 'any', (s) => [`(i.width > 0 AND i.height > 0 AND ${SHAPES[s] ?? '0'})`, []])
+    facet('ratings', f.ratings, 'any', (n) => ['i.rating = ?', [n]])
+    facet('exts', f.exts, 'any', (e) => ['i.ext = ?', [e]])
+    if (f.minWidth > 0) {
+      where.push('i.width >= ?')
+      params.push(f.minWidth)
+    }
+    if (f.minHeight > 0) {
+      where.push('i.height >= ?')
+      params.push(f.minHeight)
+    }
+  }
+
+  /** Counts for every filter value, each computed with the other filters applied but not its own. */
+  facets(q: Query): FacetCounts {
+    const count = (key: FacetKey, select: (w: string) => string): FacetValue[] => {
+      const { where, params } = this.conditions(q, key)
+      return this.all<FacetValue>(select(where.join(' AND ')), ...params)
+    }
+    const shapeCols = Object.entries(SHAPES)
+      .map(([k, c]) => `SUM(i.width > 0 AND i.height > 0 AND ${c}) AS "${k}"`)
+      .join(', ')
+    const shapes = (() => {
+      const { where, params } = this.conditions(q, 'shapes')
+      const row = this.get<Record<string, number | null>>(`SELECT ${shapeCols} FROM items i WHERE ${where.join(' AND ')}`, ...params) ?? {}
+      return Object.keys(SHAPES).map((key) => ({ key, count: row[key] ?? 0 }))
+    })()
+    return {
+      tags: count(
+        'tags',
+        (w) => `SELECT t.tag AS key, COUNT(*) AS count FROM items i JOIN item_tags t ON t.item_id = i.id WHERE ${w}
+                GROUP BY t.tag ORDER BY count DESC, t.tag COLLATE NOCASE`
+      ).concat(count('tags', (w) => `SELECT '' AS key, COUNT(*) AS count FROM items i WHERE ${w} AND NOT EXISTS (SELECT 1 FROM item_tags t WHERE t.item_id = i.id)`)),
+      folders: count(
+        'folders',
+        (w) => `SELECT x.folder_id AS key, COUNT(*) AS count FROM items i JOIN item_folders x ON x.item_id = i.id WHERE ${w} GROUP BY x.folder_id`
+      ).concat(count('folders', (w) => `SELECT '' AS key, COUNT(*) AS count FROM items i WHERE ${w} AND NOT EXISTS (SELECT 1 FROM item_folders x WHERE x.item_id = i.id)`)),
+      shapes,
+      ratings: count('ratings', (w) => `SELECT CAST(i.rating AS TEXT) AS key, COUNT(*) AS count FROM items i WHERE ${w} GROUP BY i.rating ORDER BY i.rating DESC`),
+      exts: count('exts', (w) => `SELECT i.ext AS key, COUNT(*) AS count FROM items i WHERE ${w} GROUP BY i.ext ORDER BY count DESC`)
+    }
+  }
+
+  query(q: Query): ItemLite[] {
+    const { where, params } = this.conditions(q)
 
     let order: string
     if (q.sort === 'random') {
