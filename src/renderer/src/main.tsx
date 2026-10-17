@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { initSettings } from './settings'
 import './styles.css'
+import './layout.css'
 
 if (/Macintosh|Mac OS X/.test(navigator.userAgent)) document.documentElement.dataset.platform = 'mac'
 

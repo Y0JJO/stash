@@ -47,6 +47,8 @@ interface Props {
   onFilters(f: Filters): void
   color: string | null
   onColor(c: string | null): void
+  kind: 'all' | 'image' | 'video'
+  onKind(k: 'all' | 'image' | 'video'): void
   /** The current view; counts are computed for it. */
   query: Query
   folders: Folder[]
@@ -54,7 +56,7 @@ interface Props {
 }
 
 /** Eagle-style filter row under the toolbar: one chip per filter, each opening a list with counts. */
-export function FilterBar({ filters, onFilters, color, onColor, query, folders, version }: Props) {
+export function FilterBar({ filters, onFilters, color, onColor, kind, onKind, query, folders, version }: Props) {
   const [counts, setCounts] = useState<FacetCounts | null>(null)
   const [chips, setChips] = useState<ChipKey[]>(loadChips)
 
@@ -89,6 +91,13 @@ export function FilterBar({ filters, onFilters, color, onColor, query, folders, 
 
   return (
     <div className="filter-bar">
+      <div className="segmented kind-switch">
+        {(['all', 'image', 'video'] as const).map((k) => (
+          <button key={k} className={kind === k ? 'on' : ''} onClick={() => onKind(k)}>
+            {k === 'all' ? 'Все' : k === 'image' ? 'Фото' : 'Видео'}
+          </button>
+        ))}
+      </div>
       {shown('color') && (
         <Drop icon={<span className="rainbow" />} label="Цвет" active={!!color} badge={color ? <span className="dot-swatch" style={{ background: color }} /> : null}>
           <div className="swatch-grid">
@@ -225,12 +234,13 @@ export function FilterBar({ filters, onFilters, color, onColor, query, folders, 
         ))}
       </Drop>
 
-      {activeFilterCount(filters, color) > 0 && (
+      {(activeFilterCount(filters, color) > 0 || kind !== 'all') && (
         <button
           className="filter-reset"
           onClick={() => {
             onFilters(NO_FILTERS)
             onColor(null)
+            onKind('all')
           }}
         >
           <Icon name="close" size={13} />

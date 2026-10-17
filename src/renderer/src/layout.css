@@ -1,0 +1,376 @@
+/*
+ * Window layout: the sidebar runs the full height (brand, library, navigation) and the toolbar is one
+ * rounded pane over the content, with the inspector beside it. Loaded after styles.css.
+ */
+
+.app {
+  grid-template-columns: 250px 1fr 300px;
+  grid-template-rows: 60px 1fr;
+}
+.main {
+  grid-column: 2;
+  grid-row: 2;
+}
+.inspector {
+  grid-column: 3;
+  grid-row: 2;
+}
+.app.focus .side-col {
+  display: none;
+}
+
+/* ---------- sidebar column ---------- */
+
+.side-col {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+.side-col .sidebar {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  border-right: none;
+}
+.side-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  flex: none;
+  padding: 0 18px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  -webkit-app-region: drag;
+}
+html[data-platform='mac'] .side-brand {
+  padding-left: 86px;
+}
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex: none;
+  background:
+    radial-gradient(circle at 60% 42%, #fff1b8 0 22%, transparent 23%),
+    linear-gradient(180deg, #2b1b4d, #c2477a 55%, #ff9a4d);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+.side-label {
+  padding: 2px 18px 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.side-col .lib-switch {
+  width: auto;
+  height: 38px;
+  flex: none;
+  margin: 0 10px 10px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--hover);
+}
+.lib-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- toolbar pane ---------- */
+
+.topbar {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 10px 4px 12px;
+  -webkit-app-region: drag;
+}
+/* Windows draws its window buttons in the top-right corner. */
+html:not([data-platform='mac']) .topbar {
+  padding-right: 144px;
+}
+.topbar button,
+.topbar input,
+.topbar select,
+.topbar .search {
+  -webkit-app-region: no-drag;
+}
+.topbar .toolbar {
+  flex: 1;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--panel);
+}
+.topbar .search {
+  flex: 1;
+  max-width: none;
+  min-width: 200px;
+}
+.search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.topbar .search input {
+  height: 32px;
+  padding-left: 34px;
+  border-radius: 10px;
+}
+.tb-btn,
+.tb-group,
+.tb-icon,
+.topbar .view-switch {
+  height: 32px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text);
+}
+.tb-btn > .icon {
+  color: var(--muted);
+}
+.tb-btn.on {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.tb-btn.on > .icon {
+  color: var(--accent);
+}
+.tb-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.tb-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 3px 0 8px;
+}
+.tb-group > .icon {
+  margin-left: 2px;
+}
+.tb-group .segmented,
+.topbar .view-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: none;
+  background: transparent;
+}
+.topbar .view-switch {
+  border: 1px solid var(--line);
+}
+.topbar .segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.topbar .segmented button.on {
+  background: var(--hover);
+  color: var(--text);
+}
+.tb-group .size-slider {
+  width: 72px;
+  margin-right: 6px;
+}
+.tb-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.tb-icon:hover:not(:disabled) {
+  color: var(--text);
+}
+.tb-import {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  flex: none;
+  padding: 0 16px;
+  border-radius: 10px;
+}
+/* Narrow windows: the sort and size groups give way first. */
+@media (max-width: 1180px) {
+  .tb-group:has(.size-slider) {
+    display: none;
+  }
+}
+@media (max-width: 1500px) {
+  .tb-btn {
+    padding: 0 9px;
+  }
+  .topbar .segmented button {
+    padding: 0 7px;
+  }
+}
+
+.kind-switch {
+  margin-right: 6px;
+}
+
+/* ---------- list view ---------- */
+
+.list-view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+.list-head,
+.list-row {
+  display: grid;
+  grid-template-columns: 52px minmax(160px, 1fr) 64px 108px 64px 84px 84px 150px;
+  align-items: center;
+  column-gap: 12px;
+  padding: 0 14px;
+}
+.list-head {
+  height: 34px;
+  flex: none;
+  margin: 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.list-scroll {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+}
+.list-canvas {
+  position: relative;
+}
+.list-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 52px;
+  border-radius: 10px;
+  cursor: default;
+}
+.list-row:hover {
+  background: var(--hover);
+}
+.list-row.selected {
+  background: var(--accent-soft);
+}
+.list-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-row .lc-type,
+.list-row .lc-dims,
+.list-row .lc-dur,
+.list-row .lc-size,
+.list-row .lc-date {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.list-row .lc-rating {
+  color: #f5c35b;
+}
+.lc-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.list-head .lc-thumb {
+  background: none;
+  height: auto;
+}
+.lc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- glass theme ---------- */
+
+html[data-theme='glass'] .side-col {
+  background: rgba(255, 255, 255, 0.075);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+html[data-theme='glass'] .side-col .sidebar {
+  background: transparent;
+  border-right: none;
+}
+html[data-theme='glass'] .side-col .lib-switch {
+  background: linear-gradient(180deg, rgba(178, 164, 255, 0.26), rgba(150, 134, 245, 0.16));
+  border-color: rgba(200, 190, 255, 0.26);
+}
+html[data-theme='glass'] .topbar .toolbar {
+  height: 46px;
+  margin: 0;
+  padding: 0 7px;
+  border-color: var(--glass-edge);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html[data-theme='glass'] .tb-btn,
+html[data-theme='glass'] .tb-group,
+html[data-theme='glass'] .tb-icon,
+html[data-theme='glass'] .topbar .view-switch {
+  border-color: var(--glass-edge);
+  background: rgba(255, 255, 255, 0.04);
+}
+html[data-theme='glass'] .tb-btn.on {
+  background: var(--accent-soft);
+}
+html[data-theme='glass'] .topbar .segmented button.on {
+  background: rgba(255, 255, 255, 0.14);
+}
+html[data-theme='glass'] .topbar .search input {
+  padding-left: 34px;
+}
+html[data-theme='glass'] .inspector {
+  margin-top: 6px;
+}
+html[data-theme='glass'] .lc-thumb {
+  background: rgba(255, 255, 255, 0.06);
+}

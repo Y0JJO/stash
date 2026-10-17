@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BoardInfo, Counts, Filters, Folder, ImportProgress, ItemLite, LibraryInfo, MenuEntry, Query, Scope, SortKey, TagCount } from '../../shared/types'
 import { NO_FILTERS } from '../../shared/types'
 import { api, droppedPaths } from './api'
-import { FilterBar } from './components/FilterBar'
+import { activeFilterCount, FilterBar } from './components/FilterBar'
+import { ListView } from './components/ListView'
 import { Grid } from './components/Grid'
 import { Peek, type PeekState } from './components/Peek'
 import { QuickSwitch } from './components/QuickSwitch'
@@ -47,6 +48,10 @@ export default function App() {
   )
 }
 
+/** Sorts shown as buttons in the toolbar; the rest live in its "more" menu. */
+const MAIN_SORTS: SortKey[] = ['added', 'name', 'rating']
+const SHORT_SORT: Partial<Record<SortKey, string>> = { added: 'Дата', name: 'Имя', rating: 'Рейтинг' }
+
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'added', label: 'Дата добавления' },
   { key: 'name', label: 'Имя' },
@@ -82,6 +87,8 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
   const [tileSize, setTileSize] = useState<number>(() => loadPref('tileSize', 220))
   const [showLabels, setShowLabels] = useState<boolean>(() => loadPref('showLabels', true))
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const [showFilters, setShowFilters] = useState<boolean>(() => loadPref('showFilters', false))
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => loadPref('viewMode', 'grid'))
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1e9))
   const [hoverPreview, setHoverPreview] = useState<boolean>(() => loadPref('hoverPreview', false))
   const [soundOn, setSoundOn] = useState<boolean>(() => loadPref('soundOn', false))
@@ -126,13 +133,15 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
 
   useEffect(() => {
     savePref('kind', kind)
+    savePref('showFilters', showFilters)
+    savePref('viewMode', viewMode)
     savePref('sort', sort)
     savePref('desc', desc)
     savePref('tileSize', tileSize)
     savePref('showLabels', showLabels)
     savePref('hoverPreview', hoverPreview)
     savePref('soundOn', soundOn)
-  }, [kind, sort, desc, tileSize, showLabels, hoverPreview, soundOn])
+  }, [kind, sort, desc, tileSize, showLabels, hoverPreview, soundOn, showFilters, viewMode])
 
   useEffect(() => {
     const t = setTimeout(() => setSearchQ(search), 150)
@@ -549,6 +558,45 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
     else if (r === 'install') api.installPluginDialog()
   }
 
+  const sortMenu = async () => {
+    const r = await api.menu(
+      SORTS.filter((x) => !MAIN_SORTS.includes(x.key)).map((x) => ({ id: x.key, label: x.label, checked: x.key === effSort })),
+      { search: false }
+    )
+    if (r) changeSort(r as SortKey)
+  }
+
+  const moreMenu = async () => {
+    const r = await api.menu([
+      { id: 'labels', label: 'Подписи под плитками', checked: showLabels },
+      { id: 'peek', label: 'Увеличенное превью при наведении', checked: hoverPreview },
+      { type: 'separator' },
+      { id: 'capture', label: 'Скриншот области экрана', icon: 'capture', shortcut: 'Alt+Shift+S' },
+      { id: 'plugins', label: 'Плагины…', icon: 'plugins' },
+      { id: 'telegram', label: 'Telegram-бот…', icon: 'telegram' }
+    ])
+    if (r === 'labels') setShowLabels((v) => !v)
+    else if (r === 'peek') setHoverPreview((v) => !v)
+    else if (r === 'capture') api.captureArea(folderId)
+    else if (r === 'plugins') pluginsMenu()
+    else if (r === 'telegram') setShowTelegram(true)
+  }
+
+  const emptyNode =
+    searchQ || color || kind !== 'all' ? (
+      <>Ничего не найдено</>
+    ) : inTrash ? (
+      <>Корзина пуста</>
+    ) : (
+      <>
+        <div className="grid-empty-title">Перетащите сюда картинки, видео или целые папки</div>
+        <div className="muted">или нажмите «Импорт», или вставьте из буфера — Ctrl+V</div>
+      </>
+    )
+
+  const filterCount = activeFilterCount(filters, color) + (kind !== 'all' ? 1 : 0)
+  const otherSort = !MAIN_SORTS.includes(effSort) ? SORTS.find((x) => x.key === effSort)?.label : null
+
   const libMenu = async () => {
     const recent = (await api.recentLibraries()).filter((p) => p !== lib.path)
     const r = await api.menu([
@@ -572,16 +620,42 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
 
   return (
     <div className={`app${boardFocus && scope.type === 'board' ? ' focus' : ''}`}>
-      <header className="titlebar">
+      <aside className="side-col">
+        <div className="side-brand">
+          <span className="brand-mark" />
+          D3S3RT
+        </div>
+        <div className="side-label">Библиотека</div>
         <button className="lib-switch" onClick={libMenu} title="Сменить библиотеку">
           <span className="lib-dot" />
-          {lib.name}
+          <span className="lib-name">{lib.name}</span>
           <Icon name="chevron-down" size={14} className="muted" />
         </button>
+        <Sidebar
+          scope={scope}
+          onScope={setScope}
+          folders={folders}
+          tags={tags}
+          counts={counts}
+          boards={boards}
+          libPath={lib.path}
+          unlocked={unlocked}
+          onLock={(id) => {
+            setUnlocked((u) => {
+              const n = new Set(u)
+              n.delete(id)
+              return n
+            })
+            if (scope.type === 'folder') setScopeState({ type: 'all' })
+          }}
+        />
+      </aside>
+
+      <header className="topbar">
         <div className="toolbar">
-          <div className="scope-title">{scopeTitle}</div>
           <div className="search">
-            <input ref={searchRef} value={search} placeholder="Поиск: имя, тег, заметка…  (Ctrl+F)" onChange={(e) => setSearch(e.target.value)} />
+            <Icon name="search" size={15} className="search-icon" />
+            <input ref={searchRef} value={search} placeholder="Поиск по именам, тегам и заметкам…  (Ctrl+F)" onChange={(e) => setSearch(e.target.value)} />
             {search && (
               <button className="icon-btn small" onClick={() => setSearch('')}>
                 <Icon name="close" size={13} />
@@ -589,62 +663,47 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
             )}
           </div>
           {scope.type !== 'board' && (
-          <>
-          <div className="segmented">
-            {(['all', 'image', 'video'] as const).map((k) => (
-              <button key={k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
-                {k === 'all' ? 'Все' : k === 'image' ? 'Фото' : 'Видео'}
+            <>
+              <button className={`tb-btn${showFilters || filterCount ? ' on' : ''}`} onClick={() => setShowFilters((v) => !v)} title="Фильтры">
+                <Icon name="filter" size={15} />
+                Фильтры
+                {filterCount > 0 && <span className="tb-badge">{filterCount}</span>}
               </button>
-            ))}
-          </div>
-          <select value={effSort} onChange={(e) => changeSort(e.target.value as SortKey)} title={sortFolder ? 'Сортировка этой папки' : 'Сортировка'}>
-            {SORTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          {effSort === 'random' ? (
-            <button className="icon-btn" onClick={() => setSeed(Math.floor(Math.random() * 1e9))} title="Перемешать">
-              <Icon name="shuffle" size={15} />
-            </button>
-          ) : (
-            <button className="icon-btn" onClick={flipDesc} title={effDesc ? 'По убыванию' : 'По возрастанию'}>
-              <Icon name={effDesc ? 'sort-desc' : 'sort-asc'} size={15} />
-            </button>
-          )}
-          <input
-            type="range"
-            className="size-slider"
-            min={110}
-            max={520}
-            value={tileSize}
-            onChange={(e) => setTileSize(Number(e.target.value))}
-            title="Размер миниатюр"
-          />
-          <button className={`icon-btn${showLabels ? ' on' : ''}`} onClick={() => setShowLabels((v) => !v)} title="Подписи">
-            <Icon name="type" size={15} />
-          </button>
-          <button
-            className={`icon-btn${hoverPreview ? ' on' : ''}`}
-            onClick={() => setHoverPreview((v) => !v)}
-            title="Увеличенное превью при наведении"
-          >
-            <Icon name="peek" size={15} />
-          </button>
-          <button className="icon-btn" onClick={() => api.captureArea(folderId)} title="Скриншот области экрана (Alt+Shift+S)">
-            <Icon name="capture" size={15} />
-          </button>
-          <button className="icon-btn" onClick={pluginsMenu} title="Плагины">
-            <Icon name="plugins" size={15} />
-          </button>
-          <button className="icon-btn" onClick={() => setShowSettings(true)} title="Настройки (Ctrl+,)">
-            <Icon name="settings" size={15} />
-          </button>
-          <button className="icon-btn" onClick={() => setShowTelegram(true)} title="Telegram-бот: присылайте файлы и ссылки в D3S3RT">
-            <Icon name="telegram" size={15} />
-          </button>
-          </>
+              <div className="tb-group">
+                {effSort === 'random' ? (
+                  <button className="tb-icon" onClick={() => setSeed(Math.floor(Math.random() * 1e9))} title="Перемешать">
+                    <Icon name="shuffle" size={15} />
+                  </button>
+                ) : (
+                  <button className="tb-icon" onClick={flipDesc} title={effDesc ? 'По убыванию' : 'По возрастанию'}>
+                    <Icon name={effDesc ? 'sort-desc' : 'sort-asc'} size={15} />
+                  </button>
+                )}
+                <div className="segmented" title={sortFolder ? 'Сортировка этой папки' : 'Сортировка'}>
+                  {MAIN_SORTS.map((k) => (
+                    <button key={k} className={effSort === k ? 'on' : ''} onClick={() => changeSort(k)}>
+                      {SHORT_SORT[k]}
+                    </button>
+                  ))}
+                  <button className={otherSort ? 'on' : ''} onClick={sortMenu} title="Другие сортировки">
+                    {otherSort ?? 'Ещё'}
+                    <Icon name="chevron-down" size={12} />
+                  </button>
+                </div>
+              </div>
+              <div className="tb-group">
+                <Icon name="layout-grid" size={15} className="muted" />
+                <input type="range" className="size-slider" min={110} max={520} value={tileSize} onChange={(e) => setTileSize(Number(e.target.value))} title="Размер миниатюр" />
+              </div>
+              <div className="segmented view-switch">
+                <button className={viewMode === 'grid' ? 'on' : ''} onClick={() => setViewMode('grid')}>
+                  Сетка
+                </button>
+                <button className={viewMode === 'list' ? 'on' : ''} onClick={() => setViewMode('list')}>
+                  Список
+                </button>
+              </div>
+            </>
           )}
           {inTrash ? (
             <button
@@ -657,31 +716,22 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
               Очистить
             </button>
           ) : (
-            <button className="primary" onClick={() => api.importDialog(folderId)} title="Импорт файлов (или перетащите их в окно)">
-              + Импорт
+            <button className="primary tb-import" onClick={() => api.importDialog(folderId)} title="Импорт файлов (или перетащите их в окно)">
+              <Icon name="plus" size={15} />
+              Импорт
             </button>
           )}
+          {scope.type !== 'board' && (
+            <button className="tb-icon" onClick={moreMenu} title="Ещё: подписи, превью, скриншот, плагины, Telegram">
+              <Icon name="more-horizontal" size={16} />
+            </button>
+          )}
+          <button className="tb-icon" onClick={() => setShowSettings(true)} title="Настройки (Ctrl+,)">
+            <Icon name="settings" size={16} />
+          </button>
         </div>
       </header>
 
-      <Sidebar
-        scope={scope}
-        onScope={setScope}
-        folders={folders}
-        tags={tags}
-        counts={counts}
-        boards={boards}
-        libPath={lib.path}
-        unlocked={unlocked}
-        onLock={(id) => {
-          setUnlocked((u) => {
-            const n = new Set(u)
-            n.delete(id)
-            return n
-          })
-          if (scope.type === 'folder') setScopeState({ type: 'all' })
-        }}
-      />
       {showSettings && (
         <SettingsDialog
           folders={folders}
@@ -749,38 +799,45 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
           />
         ) : (
         <>
-        <FilterBar filters={filters} onFilters={setFilters} color={color} onColor={setColor} query={query} folders={folders} version={version} />
+        {(showFilters || filterCount > 0) && (
+          <FilterBar filters={filters} onFilters={setFilters} color={color} onColor={setColor} kind={kind} onKind={setKind} query={query} folders={folders} version={version} />
+        )}
         <div className="grid-wrap">
-        <Grid
-          items={items}
-          selected={selectedSet}
-          tileSize={tileSize}
-          showLabels={showLabels}
-          reveal={reveal}
-          resetKey={JSON.stringify(scope)}
-          down={onDown}
-          click={onClick}
-          open={(i) => (prefs.itemDoubleClick === 'external' ? void api.openExternal(items[i].id) : setViewer(i))}
-          menu={onMenu}
-          drag={onDragOut}
-          hoverPreview={hoverPreview}
-          soundOn={soundOn}
-          peek={(i, rect) => setPeek(i === null || !rect ? null : { item: items[i], rect })}
-          sound={() => setSoundOn((v) => !v)}
-          onBackground={() => setSelected([])}
-          empty={
-            searchQ || color || kind !== 'all' ? (
-              <>Ничего не найдено</>
-            ) : inTrash ? (
-              <>Корзина пуста</>
-            ) : (
-              <>
-                <div className="grid-empty-title">Перетащите сюда картинки, видео или целые папки</div>
-                <div className="muted">или нажмите «+ Импорт», или вставьте из буфера — Ctrl+V</div>
-              </>
-            )
-          }
-        />
+        {viewMode === 'list' ? (
+          <ListView
+            items={items}
+            selected={selectedSet}
+            reveal={reveal}
+            resetKey={JSON.stringify(scope)}
+            down={onDown}
+            click={onClick}
+            open={(i) => (prefs.itemDoubleClick === 'external' ? void api.openExternal(items[i].id) : setViewer(i))}
+            menu={onMenu}
+            drag={onDragOut}
+            onBackground={() => setSelected([])}
+            empty={emptyNode}
+          />
+        ) : (
+          <Grid
+            items={items}
+            selected={selectedSet}
+            tileSize={tileSize}
+            showLabels={showLabels}
+            reveal={reveal}
+            resetKey={JSON.stringify(scope)}
+            down={onDown}
+            click={onClick}
+            open={(i) => (prefs.itemDoubleClick === 'external' ? void api.openExternal(items[i].id) : setViewer(i))}
+            menu={onMenu}
+            drag={onDragOut}
+            hoverPreview={hoverPreview}
+            soundOn={soundOn}
+            peek={(i, rect) => setPeek(i === null || !rect ? null : { item: items[i], rect })}
+            sound={() => setSoundOn((v) => !v)}
+            onBackground={() => setSelected([])}
+            empty={emptyNode}
+          />
+        )}
         {dropping && (
           <div className="drop-overlay">
             <div>Отпустите, чтобы импортировать{folderId ? ` в «${scopeTitle}»` : ''}</div>
