@@ -528,7 +528,7 @@ function registerIpc(): void {
     }
     await clipboard.write([new ClipboardItem(items)])
     // Figma gets the same nodes as an SVG file (built in the background, pasted on Ctrl+V in Figma).
-    let pureref: Promise<string[]> | null = null
+    let pureref: Promise<PurerefLayer[]> | null = null
     const copy = (forApps = {
       token,
       items,
@@ -570,7 +570,7 @@ function registerIpc(): void {
     token: string
     items: Record<string, Blob>
     figmaFile: Promise<string | null>
-    pureref: () => Promise<string[]>
+    pureref: () => Promise<PurerefLayer[]>
   } | null = null
   const isPureRef = (w: { process: string }) => /^pureref$/i.test(w.process)
   let hookUntil = 0
@@ -589,6 +589,8 @@ function registerIpc(): void {
     }
   }
   const armPasteHook = () => {
+    // The key/window helper is PowerShell: elsewhere a caught Cmd+V couldn't be passed on.
+    if (process.platform !== 'win32') return
     hookUntil = Date.now() + 10 * 60_000
     warmUpKeys()
     register()
@@ -613,28 +615,30 @@ function registerIpc(): void {
     }, 2500)
   /**
    * PureRef: the pictures go into the open board as separate files, and PureRef lays them out its
-   * own way. Its clipboard can't carry our layout — PureRef pastes from its own memory and only
-   * uses "pureref/binary" as a marker — and a pasted .pur opens as a new project. The board's
-   * layout is available through Send → PureRef, which opens it in a new window.
+   * own way. The board's own layout can't be carried into an open board: PureRef pastes its own
+   * clipboard format from memory (ignoring positions written into it) and a pasted .pur replaces
+   * the open project. The exact layout is available through Send → PureRef, in a new window.
    */
   const purerefPaste = async (copy: NonNullable<typeof forApps>) => {
-    await copyFiles(await copy.pureref())
+    await copyFiles((await copy.pureref()).map((x) => x.file))
     await pressThrough('v')
     restoreCopyLater(copy)
   }
-  /** The copy's pictures as PNG files for PureRef — frames left out (PureRef has none). */
-  const purerefFiles = async (l: Library, board: Board): Promise<string[]> => {
+  type PurerefLayer = { file: string; cx: number; cy: number }
+  /** The copy's pictures as PNG files for PureRef — frames left out. */
+  const purerefFiles = async (l: Library, board: Board): Promise<PurerefLayer[]> => {
     const { layers } = await boardScene(l, board, { nativeFrames: true })
-    const dir = path.join(app.getPath('userData'), 'pureref-paste')
+    const dir = path.join(app.getPath('userData'), 'pureref-copy')
     await fs.promises.rm(dir, { recursive: true, force: true })
     await fs.promises.mkdir(dir, { recursive: true })
-    const files: string[] = []
+    const out: PurerefLayer[] = []
     for (const [i, layer] of layers.entries()) {
-      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${layer.name.replace(/[<>:"/\\|?*]/g, '_').slice(0, 60)}.png`)
+      // ';' separates command arguments and ',' separates paths in PureRef's command line.
+      const file = path.join(dir, `${String(i + 1).padStart(3, '0')} ${layer.name.replace(/[<>:"/\\|?*;,]/g, '_').slice(0, 60)}.png`)
       await fs.promises.writeFile(file, layer.png)
-      files.push(file)
+      out.push({ file, cx: layer.cx, cy: layer.cy })
     }
-    return files
+    return out
   }
 
   /**
