@@ -2,7 +2,7 @@
  * SVG markup for non-image board nodes. Shared by the canvas (rendered via innerHTML) and the
  * PNG / Figma exporters, so what you see on the board is exactly what gets exported.
  */
-import type { BoardNode } from './types'
+import type { BoardNode, TextRun } from './types'
 import { wrapText } from './boardLayout'
 import { iconInner } from './icons'
 
@@ -113,13 +113,22 @@ export function nodeInnerSvg(n: BoardNode): string {
       return `<rect x="0.5" y="0.5" width="${n.w - 1}" height="${n.h - 1}" rx="16" fill="#222328" stroke="#34363d"/>${rows.join('')}`
     }
     case 'text': {
-      const fs = n.fontSize ?? 22
-      const lines = wrapText(n.text ?? '', n.w, fs)
-      const lh = fs * 1.3
       const anchor = n.align === 'center' ? 'middle' : n.align === 'right' ? 'end' : 'start'
       const x = n.align === 'center' ? n.w / 2 : n.align === 'right' ? n.w : 0
-      return lines
-        .map((l, i) => `<text x="${x}" y="${(i + 1) * lh - lh * 0.25}" text-anchor="${anchor}" font-family="Segoe UI, Arial, sans-serif" font-weight="600" font-size="${fs}" fill="${esc(n.color ?? '#e8e9ee')}">${esc(l)}</text>`)
+      let y = 0
+      return styledLines(n)
+        .map((segs) => {
+          // A line is as tall as its largest piece.
+          const lh = Math.max(...segs.map((s) => s.fontSize ?? n.fontSize ?? 22)) * 1.3
+          y += lh
+          const spans = segs
+            .map((s) => {
+              const font = textFont({ ...n, font: s.font ?? n.font })
+              return `<tspan font-family="${esc(font)}" font-weight="${s.weight ?? n.weight ?? 600}" font-size="${s.fontSize ?? n.fontSize ?? 22}" fill="${esc(s.color ?? n.color ?? '#e8e9ee')}">${esc(s.text)}</tspan>`
+            })
+            .join('')
+          return `<text x="${x}" y="${y - lh * 0.25}" text-anchor="${anchor}" xml:space="preserve">${spans}</text>`
+        })
         .join('')
     }
     default:
@@ -136,6 +145,43 @@ export function nodeSvg(n: BoardNode, scale = 1): string {
 
 /** Height a text node really needs for its wrapped lines. */
 export function textHeight(n: BoardNode): number {
-  const fs = n.fontSize ?? 22
-  return Math.max(n.h, wrapText(n.text ?? '', n.w, fs).length * fs * 1.3 + 4)
+  const lines = styledLines(n)
+  const h = lines.reduce((sum, segs) => sum + Math.max(...segs.map((s) => s.fontSize ?? n.fontSize ?? 22)) * 1.3, 0)
+  return Math.max(n.h, h + 4)
+}
+
+/**
+ * The text's lines as styled pieces. Lines come from `textLines` (which may collapse spaces when
+ * wrapping), so each of their characters is matched back to the run it came from.
+ */
+export function styledLines(n: BoardNode): TextRun[][] {
+  const runs = n.runs?.length ? n.runs : [{ text: n.text ?? '' }]
+  const chars: { ch: string; run: TextRun }[] = []
+  for (const r of runs) for (const ch of r.text) chars.push({ ch, run: r })
+  let p = 0
+  return textLines(n).map((line) => {
+    const segs: TextRun[] = []
+    for (const ch of line) {
+      while (p < chars.length && chars[p].ch !== ch) p++
+      const run = chars[p]?.run ?? runs[runs.length - 1]
+      p++
+      const last = segs[segs.length - 1]
+      if (last && sameStyle(last, run)) last.text += ch
+      else segs.push({ ...run, text: ch })
+    }
+    return segs.length ? segs : [{ ...(chars[p]?.run ?? runs[0]), text: '' }]
+  })
+}
+
+/** Do two runs look the same (ignoring their text)? */
+export const sameStyle = (a: TextRun, b: TextRun) => a.color === b.color && a.font === b.font && a.fontSize === b.fontSize && a.weight === b.weight
+
+/** CSS / SVG font-family list for a text node: its chosen font first, then the default ones. */
+export function textFont(n: BoardNode): string {
+  return n.font ? `'${n.font.replace(/'/g, '')}', Segoe UI, Arial, sans-serif` : 'Segoe UI, Arial, sans-serif'
+}
+
+/** A text node's lines: auto-width text breaks only at Enter, fixed-width text also wraps. */
+export function textLines(n: BoardNode): string[] {
+  return n.autoWidth ? (n.text ?? '').split('\n') : wrapText(n.text ?? '', n.w, n.fontSize ?? 22)
 }

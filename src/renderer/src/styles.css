@@ -1838,7 +1838,14 @@ textarea {
   min-height: 1em;
   font-weight: 600;
 }
-.btext[contenteditable='true'] {
+/* Auto-width text grows with what's typed and breaks lines only at Enter. */
+.btext.auto {
+  white-space: pre;
+  width: max-content;
+  min-width: 0.6em;
+}
+.btext[contenteditable='true'],
+.btext[contenteditable='plaintext-only'] {
   user-select: text;
   cursor: text;
   outline: 1px dashed var(--accent) !important;
@@ -3873,6 +3880,414 @@ html[data-platform='mac'] .titlebar {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- moodboard: side panel, larger controls ---------- */
+
+.board-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+/* The library inspector makes way for the board's own side panel. */
+.app.board {
+  /* sidebar width as in layout.css; no inspector column */
+  grid-template-columns: 250px 1fr 0;
+}
+.app.board.focus {
+  grid-template-columns: 0 1fr 0;
+}
+.app.board .inspector {
+  display: none;
+}
+
+.bside {
+  width: 300px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  font-size: 13px;
+  cursor: default;
+  min-height: 0;
+}
+.bside-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.bside-tab {
+  padding: 9px 10px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.bside-tab:hover {
+  color: var(--text);
+}
+.bside-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.bside-hide {
+  margin-left: auto;
+}
+.bside-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.bside-section {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bside-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text);
+}
+details.bside-section > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.bside-section > summary::-webkit-details-marker {
+  display: none;
+}
+.bside-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bside-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bside-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.bside-ctl {
+  min-width: 0;
+}
+input.bside-ctl {
+  width: 100%;
+}
+.bside-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.bside-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.bside-num {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 32px;
+  border: 1px solid #34363d;
+  border-radius: 7px;
+  background: #1c1d22;
+}
+.bside-num:focus-within {
+  border-color: var(--accent);
+}
+.bside-num span {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 10px;
+}
+.bside-num input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.bside-num.disabled {
+  opacity: 0.45;
+}
+.bside-chips .bside-num {
+  width: 72px;
+}
+.bside-val {
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 36px;
+  text-align: right;
+}
+.bside .cv-opacity {
+  margin: 0;
+}
+.bside .cv-opacity input {
+  flex: 1;
+  width: auto;
+}
+.bside .cv-chip {
+  height: 30px;
+  min-width: 34px;
+  font-size: 12.5px;
+}
+.cv-chip.danger:hover {
+  background: rgba(229, 83, 75, 0.18);
+  border-color: #e5534b;
+  color: #ff8a84;
+}
+.bside .cv-color {
+  width: 22px;
+  height: 22px;
+}
+.bside .check-row {
+  font-size: 13px;
+}
+.bside .cv-keys {
+  padding: 0;
+}
+.bside .cv-keys .cv-panel-head {
+  display: none;
+}
+.bside .cv-key-row {
+  padding: 4px 0;
+}
+.bside-actions {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+.bside .cv-layers {
+  flex: 1;
+}
+.bside .cv-layer {
+  padding: 7px 8px;
+}
+.bside .cv-layer-name {
+  font-size: 13px;
+}
+.bside-assets {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.bside-search {
+  margin: 12px 12px 6px;
+}
+.bside-tip {
+  font-size: 12px;
+  padding: 0 14px 10px;
+}
+.bside .board-drawer-grid {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: repeat(3, 1fr);
+  /* square cells (a column is ~88px); without fixed rows they squash and overlap */
+  grid-auto-rows: 88px;
+  padding: 0 12px 12px;
+}
+.bside .drawer-cell {
+  aspect-ratio: auto;
+}
+.drawer-cell {
+  cursor: pointer;
+}
+.drawer-cell:hover img {
+  filter: brightness(1.12);
+}
+.drawer-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+/* The check after adding shows briefly, then the cell is back to normal. */
+.drawer-cell.added {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.drawer-cell.added .drawer-add {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* Larger floating controls on the canvas. */
+.canvas .cv-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+}
+.canvas .cv-btn.sm {
+  width: 34px;
+  height: 34px;
+}
+.canvas .cv-btn .icon {
+  width: 20px;
+  height: 20px;
+}
+.canvas .cv-btn.sm .icon {
+  width: 18px;
+  height: 18px;
+}
+.canvas .cv-dock {
+  gap: 5px;
+  padding: 7px;
+  border-radius: 14px;
+}
+.canvas .cv-sep:not(.v) {
+  width: 26px;
+}
+.canvas .cv-sep.v {
+  height: 22px;
+}
+.canvas .cv-bottom {
+  padding: 5px 10px;
+  border-radius: 14px;
+  gap: 4px;
+}
+.canvas .cv-name {
+  width: 190px;
+  font-size: 14px;
+}
+.canvas .cv-zoom {
+  min-width: 60px;
+  font-size: 14px;
+}
+.canvas .cv-count {
+  font-size: 13px;
+}
+.canvas .cv-props {
+  padding: 8px 12px;
+  gap: 6px;
+}
+.canvas .cv-chip {
+  height: 30px;
+  font-size: 13px;
+}
+.canvas .cv-color {
+  width: 22px;
+  height: 22px;
+}
+
+/* font picker (board text) */
+.font-pick {
+  position: relative;
+}
+.font-pick-btn {
+  width: 100%;
+  height: 34px;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid #34363d;
+  border-radius: 7px;
+  background: #1c1d22;
+  color: var(--text);
+  font-size: 14px;
+}
+.font-pick-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.font-pick-btn:hover {
+  border-color: #4a4c55;
+}
+.font-pick-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: #26272d;
+  border: 1px solid #36383f;
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.font-pick-pop input {
+  margin: 8px;
+}
+.font-pick-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  display: flex;
+  flex-direction: column;
+}
+.font-pick-list button {
+  /* fixed rows: in a height-capped flex column they'd otherwise squash into each other */
+  flex: none;
+  height: 34px;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between !important;
+  gap: 10px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.font-pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  /* fonts with tall metrics must not spill out of the fixed row */
+  line-height: 34px;
+  height: 34px;
+}
+
+.font-pick-list button:hover {
+  background: #33353d;
+}
+.font-pick-list button.on {
+  background: rgba(91, 124, 250, 0.25);
+}
+.font-pick-list button.active {
+  background: #33353d;
+  outline: 1px solid #4a4c55;
+}
+.font-pick-empty {
+  padding: 10px;
+  font-size: 12px;
+}
+
+/* Selected text keeps its own colour while edited (the default highlight paints it white), so a
+   colour picked for the selected part shows at once. */
+.btext::selection,
+.btext *::selection {
+  background: rgba(91, 124, 250, 0.35);
 }
 
 /* ---------- theme "Стекло": frosted glass (the OS draws the blur behind a transparent page) ---------- */

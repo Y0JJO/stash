@@ -21,7 +21,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
 import { boardLayers, boardScene, boardSvg, renderBoardPng } from './boards'
 import { copyFiles, foregroundWindow, pressCtrl, stopKeys, warmUpKeys } from './winKeys'
-import { arrangeMiroClip, arrangeMiroClipByShape, decodeMiroHtml, encodeMiroHtml, type FrameEntry, type LayoutEntry } from './miroClipboard'
+import { arrangeMiroClipByShape, decodeMiroHtml, encodeMiroHtml, type FrameEntry, type LayoutEntry } from './miroClipboard'
 import { copyFolderToLibrary, exportFolderToDir, exportFolderToZip } from './folderOps'
 import { boundsOf, masonry } from '../shared/boardLayout'
 import { captureArea } from './capture'
@@ -823,9 +823,6 @@ function registerIpc(): void {
       await fs.promises.writeFile(file, layer.png)
       files.push({ file, cx: layer.cx, cy: layer.cy })
     }
-    const layout: LayoutEntry[] = layers.map((x, i) => ({ n: i + 1, cx: x.cx, cy: x.cy, w: x.w, h: x.h }))
-    // Next to the folder, not in it: the user drags the whole folder's contents into Miro.
-    await fs.promises.writeFile(`${dir}.json`, JSON.stringify(layout))
     return { dir, files }
   }
   /**
@@ -850,27 +847,24 @@ function registerIpc(): void {
     await shell.openPath(dir)
     return true
   })
-  /**
-   * Miro, step 2: the user dragged those files into Miro and copied them there. Re-places the
-   * copied images by the saved layout and puts them back on the clipboard to paste.
-   */
-  handle('apps:miroArrange', async (boardId: string) => {
-    let html = ''
-    for (const item of await clipboard.read()) {
-      if (item.types.includes('text/html')) html += await ((await item.getType('text/html')) as Blob).text()
-    }
-    const clip = decodeMiroHtml(html)
-    if (!clip) throw new Error('В буфере нет картинок из Miro — выделите их в Miro и нажмите Ctrl+C')
-    let layout: LayoutEntry[]
-    try {
-      layout = JSON.parse(await fs.promises.readFile(path.join(app.getPath('userData'), 'miro', `${boardId}.json`), 'utf8'))
-    } catch {
-      throw new Error('Сначала: Отправить → Miro → Сохранить отдельными картинками')
-    }
-    const n = arrangeMiroClip(clip, layout)
-    if (!n) throw new Error('Скопированные в Miro картинки не из этого мудборда')
-    await clipboard.write([new ClipboardItem({ 'text/html': new Blob([encodeMiroHtml(clip)], { type: 'text/html' }) })])
-    return n
+  /** Installed font families for the board's text (Windows: the system font collection). */
+  let fontList: Promise<string[]> | null = null
+  handle('fonts:list', () => {
+    const fallback = ['Arial', 'Georgia', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Trebuchet MS', 'Impact']
+    if (process.platform !== 'win32') return fallback
+    fontList ??= new Promise<string[]>((resolve) => {
+      const script = `[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Drawing; (New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }`
+      let out = ''
+      const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true })
+      p.stdout.setEncoding('utf8')
+      p.stdout.on('data', (d: string) => (out += d))
+      p.on('error', () => resolve(fallback))
+      p.on('exit', () => {
+        const names = [...new Set(out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))]
+        resolve(names.length ? names : fallback)
+      })
+    })
+    return fontList
   })
   handle('apps:open', (name: 'figma' | 'miro' | 'pureref') => {
     const urls = { figma: 'figma://', miro: 'https://miro.com/app/dashboard/', pureref: 'https://www.pureref.com/download.php' }

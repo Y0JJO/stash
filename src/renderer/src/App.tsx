@@ -619,7 +619,7 @@ function Workspace({ lib, onLock }: { lib: LibraryInfo; onLock(): void }) {
   }
 
   return (
-    <div className={`app${boardFocus && scope.type === 'board' ? ' focus' : ''}`}>
+    <div className={`app${scope.type === 'board' ? ' board' : ''}${boardFocus && scope.type === 'board' ? ' focus' : ''}`}>
       <aside className="side-col">
         <div className="side-brand">
           <span className="brand-mark" />

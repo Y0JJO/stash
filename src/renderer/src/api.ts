@@ -204,7 +204,8 @@ export const api = {
   openApp: (name: 'figma' | 'miro' | 'pureref') => call<void>('apps:open', name),
   openInPureRef: (boardId: string) => call<boolean>('apps:pureref', boardId),
   miroFiles: (boardId: string) => call<boolean>('apps:miroFiles', boardId),
-  miroArrange: (boardId: string) => call<number>('apps:miroArrange', boardId),
+  /** Installed font families (for board text). */
+  fonts: () => call<string[]>('fonts:list'),
   onBoardChanged: (cb: (id: string) => void) => b.on('boards:changed', cb),
   /** A board copy (Ctrl+C) is fully ready to paste anywhere. */
   onCopyReady: (cb: (info: { count: number; frames: number }) => void) => b.on('boards:copyReady', cb),

@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { BoardData, BoardNode, ItemLite, MenuEntry } from '../../../shared/types'
+import type { BoardData, BoardNode, ItemLite, MenuEntry, TextRun } from '../../../shared/types'
 import { NO_FILTERS } from '../../../shared/types'
 import { masonry, newNodeId } from '../../../shared/boardLayout'
-import { nodeSvg, PALETTE_W, paletteHeight } from '../../../shared/boardSvg'
+import { nodeSvg, PALETTE_W, paletteHeight, sameStyle, textFont } from '../../../shared/boardSvg'
 import { api, droppedPaths, fileUrl, thumbUrl } from '../api'
-import { BROWSER_IMAGE, clamp, itemsLabel, keyOf, plural } from '../util'
+import { BROWSER_IMAGE, clamp, itemsLabel, keyOf, loadPref, plural, savePref } from '../util'
 import { Icon } from './Icon'
 import { STICKER_ICONS } from '../../../shared/icons'
 
@@ -43,6 +43,8 @@ interface Props {
   onFocus(on: boolean): void
 }
 
+type SideTab = 'props' | 'layers' | 'assets'
+
 type Drag =
   | { kind: 'move'; sx: number; sy: number; orig: Map<string, { x: number; y: number }>; before: BoardNode[]; moved: boolean }
   | { kind: 'resize'; n0: BoardNode; hx: number; hy: number; sx: number; sy: number; before: BoardNode[] }
@@ -51,12 +53,15 @@ type Drag =
   | { kind: 'marquee'; bx: number; by: number; cx: number; cy: number; add: boolean }
   | { kind: 'draw'; pts: [number, number][]; marker: boolean }
   | { kind: 'create'; tool: Tool; bx: number; by: number; cx: number; cy: number }
+  | { kind: 'textbox'; bx: number; by: number; cx: number; cy: number }
 
 interface ToolOpts {
   color: string
   strokeWidth: number
   fill: boolean
   fontSize: number
+  /** Font for new text; unset = default. */
+  font?: string
 }
 
 const errText = (e: unknown) => String((e as Error).message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
@@ -75,10 +80,19 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
   const [items, setItems] = useState<Map<string, ItemLite>>(new Map())
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
+  /** Where the click that started text editing was (the caret goes there). */
+  const editCaret = useRef<{ x: number; y: number } | null>(null)
+  const startEditing = (id: string, at: { x: number; y: number } | null) => {
+    editCaret.current = at
+    setEditing(id)
+  }
+  /** Last pointer-down on a node: double-clicks are spotted here, as the canvas captures the pointer. */
+  const lastDown = useRef({ id: '', t: 0 })
   const [tool, setTool] = useState<Tool>('select')
   const [opts, setOpts] = useState<ToolOpts>({ color: '#e8c547', strokeWidth: 4, fill: false, fontSize: 22 })
-  const [panel, setPanel] = useState<'layers' | 'settings' | 'keys' | null>(null)
-  const [drawer, setDrawer] = useState(false)
+  /** Right side panel: open/closed and which tab; remembered between sessions. */
+  const [side, setSide] = useState<{ open: boolean; tab: SideTab }>(() => loadPref('board.side', { open: true, tab: 'props' as SideTab }))
+  useEffect(() => savePref('board.side', side), [side])
   const [stickers, setStickers] = useState(false)
   const [preview, setPreview] = useState(false)
   const [spaceDown, setSpaceDown] = useState(false)
@@ -246,9 +260,21 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     return node
   }
 
-  const addText = (at = center()) => {
-    const node = addNode({ type: 'text', x: at.x, y: at.y - opts.fontSize * 0.6, w: 280, h: opts.fontSize * 1.4, text: 'Текст', fontSize: opts.fontSize, color: opts.color === '#1b1c20' ? '#f1f2f5' : opts.color })
-    setEditing(node.id)
+  /** New text, as in Figma: a click gives auto-width text, a drag a fixed-width box; typing starts at once. */
+  const addText = (at = center(), width?: number) => {
+    const node = addNode({
+      type: 'text',
+      x: at.x,
+      y: width ? at.y : at.y - opts.fontSize * 0.65,
+      w: width ?? opts.fontSize,
+      h: opts.fontSize * 1.3,
+      text: '',
+      fontSize: opts.fontSize,
+      font: opts.font,
+      color: opts.color === '#1b1c20' ? '#f1f2f5' : opts.color,
+      autoWidth: !width
+    })
+    startEditing(node.id, null)
     setTool('select')
   }
 
@@ -291,11 +317,14 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     setSelected(new Set(copies.map((c) => c.id)))
   }
 
-  const copySelected = async (cut = false) => {
+  /** Ctrl+C / Ctrl+X of the selection — or of the whole board (Send → copy board). */
+  const copySelected = async (cut = false, whole = false) => {
     const all = nodesRef.current
     const frames = all.filter((f) => selected.has(f.id) && f.type === 'frame')
     // A copied frame takes along everything lying entirely inside it (as dragging it does).
-    const picked = all.filter((n) => selected.has(n.id) || frames.some((f) => n.id !== f.id && n.x >= f.x && n.y >= f.y && n.x + n.w <= f.x + f.w && n.y + n.h <= f.y + f.h))
+    const picked = whole
+      ? all.filter((n) => !n.hidden)
+      : all.filter((n) => selected.has(n.id) || frames.some((f) => n.id !== f.id && n.x >= f.x && n.y >= f.y && n.x + n.w <= f.x + f.w && n.y + n.h <= f.y + f.h))
     if (!picked.length) return
     try {
       window.clearTimeout(copyNoteTimer.current)
@@ -365,6 +394,18 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
   const onNodeDown = (e: React.PointerEvent, n: BoardNode) => {
     if (e.button !== 0 || editing === n.id || effectiveTool !== 'select') return
     e.stopPropagation()
+    const now = performance.now()
+    const double = lastDown.current.id === n.id && now - lastDown.current.t < 400
+    lastDown.current = { id: n.id, t: double ? 0 : now }
+    if (double && !e.shiftKey && !e.ctrlKey) {
+      // Double-click: edit text with the caret where it was clicked, open pictures.
+      if (n.type === 'text' && !n.locked) {
+        e.preventDefault()
+        setSelected(new Set([n.id]))
+        return startEditing(n.id, { x: e.clientX, y: e.clientY })
+      }
+      if (n.itemId) return onOpenItem(n.itemId)
+    }
     let sel = selected
     if (e.shiftKey || e.ctrlKey) {
       sel = new Set(selected)
@@ -405,7 +446,10 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
       drag.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false }
     } else if (e.button !== 0) return
     else if (t === 'select') drag.current = { kind: 'marquee', bx: p.x, by: p.y, cx: p.x, cy: p.y, add: e.shiftKey }
-    else if (t === 'text') return addText(p)
+    else if (t === 'text') {
+      e.preventDefault() // keeps the new text's focus
+      drag.current = { kind: 'textbox', bx: p.x, by: p.y, cx: p.x, cy: p.y }
+    }
     else if (t === 'pen' || t === 'marker') drag.current = { kind: 'draw', pts: [[p.x, p.y]], marker: t === 'marker' }
     else drag.current = { kind: 'create', tool: t, bx: snapTo(p.x, snap), by: snapTo(p.y, snap), cx: p.x, cy: p.y }
     wrap.current!.setPointerCapture(e.pointerId)
@@ -462,6 +506,11 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     } else if (d.kind === 'pan') {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 3) d.moved = true
       setView((v) => ({ ...v, x: d.vx + e.clientX - d.sx, y: d.vy + e.clientY - d.sy }))
+    } else if (d.kind === 'textbox') {
+      const p = toBoard(e.clientX, e.clientY)
+      d.cx = p.x
+      d.cy = p.y
+      setMarquee({ x: Math.min(d.bx, d.cx), y: Math.min(d.by, d.cy), w: Math.abs(d.cx - d.bx), h: Math.abs(d.cy - d.by) })
     } else if (d.kind === 'marquee') {
       const p = toBoard(e.clientX, e.clientY)
       d.cx = p.x
@@ -505,6 +554,12 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     else if (d.kind === 'pan') {
       if (!d.moved && tool === 'select') setSelected(new Set())
       save()
+    } else if (d.kind === 'textbox') {
+      setMarquee(null)
+      const w = Math.abs(d.cx - d.bx)
+      // A real drag sets a fixed width; a click (or a tiny drag) makes auto-width text.
+      if (w * viewRef.current.zoom > 12) addText({ x: Math.min(d.bx, d.cx), y: Math.min(d.by, d.cy) }, w)
+      else addText({ x: d.bx, y: d.by })
     } else if (d.kind === 'marquee') {
       const r = { x: Math.min(d.bx, d.cx), y: Math.min(d.by, d.cy), r: Math.max(d.bx, d.cx), b: Math.max(d.by, d.cy) }
       if (r.r - r.x < 3 && r.b - r.y < 3) {
@@ -529,7 +584,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     const el = wrap.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if ((e.target as HTMLElement).closest('.cv-dock, .cv-panel, .cv-bottom, .board-drawer, .cv-props')) return
+      if ((e.target as HTMLElement).closest('.cv-dock, .cv-bottom, .cv-props')) return
       e.preventDefault()
       const r = el.getBoundingClientRect()
       const mx = e.clientX - r.left
@@ -551,6 +606,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     const onDown = (e: KeyboardEvent) => {
       const t = e.target instanceof Element ? e.target : document.body
       if (t.closest('input, textarea, select, [contenteditable="true"]') || document.querySelector('.viewer, .modal-backdrop, .pin-panel, .cm-backdrop')) return
+      if (editing) return
       const k = keyOf(e)
       const sel = selected
       if (e.key === ' ') {
@@ -562,6 +618,13 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
         if (preview) setPreview(false)
         else if (tool !== 'select') setTool('select')
         else setSelected(new Set())
+      } else if (e.key === 'Enter' && sel.size === 1) {
+        // Enter edits the selected text, as in Figma.
+        const n = nodesRef.current.find((x) => sel.has(x.id))
+        if (n?.type === 'text' && !n.locked) {
+          e.preventDefault()
+          startEditing(n.id, null)
+        }
       } else if (e.key === 'Delete' || e.key === 'Backspace') removeSelected()
       else if (e.ctrlKey && k === 'z' && !e.shiftKey) undo()
       else if (e.ctrlKey && (k === 'y' || (k === 'z' && e.shiftKey))) redo()
@@ -679,7 +742,7 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     if (r === 'open' && n.itemId) onOpenItem(n.itemId)
     else if (r === 'locate' && n.itemId) onLocateItem(n.itemId)
     else if (r === 'reveal' && n.itemId) api.showInFolder(n.itemId)
-    else if (r === 'edit') setEditing(n.id)
+    else if (r === 'edit') startEditing(n.id, null)
     else if (r === 'palette') makePalette(n)
     else if (r === 'flipx') patch(sel, (x) => ({ flipX: !x.flipX }))
     else if (r === 'flipy') patch(sel, (x) => ({ flipY: !x.flipY }))
@@ -717,33 +780,31 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
 
   const sendMenu = async () => {
     const r = await api.menu([
+      { id: 'copy-board', label: 'Копировать всю доску', icon: 'copy' },
+      { type: 'separator' },
       { label: 'Figma', icon: 'send', submenu: [
-        { id: 'figma-svg', label: 'Скопировать слоями (SVG)' },
-        { id: 'figma-file', label: 'Сохранить SVG для Figma…' },
-        { id: 'figma-png', label: 'Скопировать одной картинкой' },
+        { id: 'figma-svg', label: 'Копировать слоями' },
+        { id: 'figma-file', label: 'Сохранить SVG-файл…' },
         { type: 'separator' },
         { id: 'figma-open', label: 'Открыть Figma' }
       ] },
-      { label: 'PureRef', icon: 'send', submenu: [
-        { id: 'pr-open', label: 'Открыть в PureRef отдельными картинками' },
-        { id: 'pr-png', label: 'Скопировать одной картинкой' }
-      ] },
       { label: 'Miro', icon: 'send', submenu: [
-        { id: 'miro-files', label: '1. Сохранить отдельными картинками' },
-        { id: 'miro-arrange', label: '2. Разложить скопированное в Miro' },
-        { id: 'miro-png', label: 'Скопировать одной картинкой' },
+        { id: 'miro-files', label: 'Сохранить картинки в папку' },
         { type: 'separator' },
         { id: 'miro-open', label: 'Открыть Miro в браузере' }
-      ] }
+      ] },
+      { label: 'PureRef', icon: 'send', submenu: [{ id: 'pr-open', label: 'Открыть с раскладкой в новом окне' }] },
+      { type: 'separator' },
+      { id: 'png', label: 'Скопировать одной картинкой', icon: 'image' }
     ])
-    if (r === 'figma-svg') run(() => api.boardSvg(boardId, 'clipboard'), 'SVG скопирован — вставьте в Figma (Ctrl+V)')
+    if (r === 'copy-board') copySelected(false, true)
+    else if (r === 'figma-svg') run(() => api.boardSvg(boardId, 'clipboard'), 'Скопировано — вставьте в Figma (Ctrl+V)')
     else if (r === 'figma-file') run(() => api.boardSvg(boardId, 'file'), 'SVG сохранён — перетащите его в Figma')
     else if (r === 'figma-open') api.openApp('figma')
     else if (r === 'miro-open') api.openApp('miro')
-    else if (r === 'miro-files') run(() => api.miroFiles(boardId), 'Перетащите всё из папки в Miro, там выделите их и нажмите Ctrl+X')
-    else if (r === 'miro-arrange') run(() => api.miroArrange(boardId), 'Готово — вставьте в Miro (Ctrl+V)')
+    else if (r === 'miro-files') run(() => api.miroFiles(boardId), 'Папка открыта — перетащите картинки в Miro')
     else if (r === 'pr-open') run(() => api.openInPureRef(boardId), 'Открыто в PureRef')
-    else if (r?.endsWith('-png')) run(() => api.exportBoard(boardId, 'clipboard'), 'Скопировано — вставьте Ctrl+V')
+    else if (r === 'png') run(() => api.exportBoard(boardId, 'clipboard'), 'Скопировано одной картинкой — вставьте Ctrl+V')
   }
 
   // ---------- properties of the selection / current tool ----------
@@ -752,9 +813,14 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
   const styled = selNodes.filter((n) => n.type === 'text' || n.type === 'shape' || n.type === 'path')
   const drawingTool = ['pen', 'marker', 'rect', 'ellipse', 'line', 'arrow', 'text'].includes(tool)
   const showProps = !preview && (drawingTool || styled.length > 0 || selNodes.length > 0)
+  /** A style set on a whole text replaces its pieces' own values of it (as in Figma). */
+  const unrun = (n: BoardNode, keys: (keyof TextRun)[]) =>
+    n.runs?.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !keys.includes(k as keyof TextRun))) as unknown as TextRun)
   const setColor = (c: string) => {
+    // Editing with part of the text selected: only that part (and not the style for new text).
+    if (editing && styleSelection({ color: c })) return
     setOpts((o) => ({ ...o, color: c }))
-    if (styled.length) patch(new Set(styled.map((n) => n.id)), (n) => (n.type === 'text' ? { color: c } : { stroke: c, fill: n.fill ? `${c}55` : n.fill }))
+    if (styled.length) patch(new Set(styled.map((n) => n.id)), (n) => (n.type === 'text' ? { color: c, runs: unrun(n, ['color']) } : { stroke: c, fill: n.fill ? `${c}55` : n.fill }))
   }
   const setStroke = (w: number) => {
     setOpts((o) => ({ ...o, strokeWidth: w }))
@@ -767,19 +833,331 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     if (ids.length) patch(new Set(ids), (n) => ({ fill: on ? `${n.stroke ?? opts.color}55` : null }))
   }
   const setFont = (size: number) => {
+    if (editing && styleSelection({ fontSize: size })) return
     setOpts((o) => ({ ...o, fontSize: size }))
     const ids = styled.filter((n) => n.type === 'text').map((n) => n.id)
-    if (ids.length) patch(new Set(ids), () => ({ fontSize: size }))
+    if (ids.length) patch(new Set(ids), (n) => ({ fontSize: size, runs: unrun(n, ['fontSize']) }))
+  }
+  const texts = selNodes.filter((n) => n.type === 'text')
+  /** Text style for the selected part while editing, else for the whole selected texts. */
+  const patchTexts = (p: Partial<BoardNode>) => {
+    const runKeys = (['color', 'font', 'fontSize', 'weight'] as const).filter((k) => k in p)
+    if (editing && runKeys.length && styleSelection(Object.fromEntries(runKeys.map((k) => [k, p[k]])))) return
+    if (texts.length) patch(new Set(texts.map((n) => n.id)), (n) => ({ ...p, ...(runKeys.length ? { runs: unrun(n, [...runKeys]) } : {}) }))
+  }
+  /** Font shown on the selected text while browsing the font list (false = no preview). */
+  const [fontPreview, setFontPreview] = useState<string | undefined | false>(false)
+  /** Font list hover: on the selected part while editing (Photoshop-like), else on the whole text. */
+  const previewFont = (f: string | undefined | false) => {
+    if (f === false) {
+      previewPartFont(false)
+      return setFontPreview(false)
+    }
+    if (editing && previewPartFont(f)) return
+    setFontPreview(f)
+  }
+  /** Font for the selected text and for new text from the tool. */
+  const setFontFamily = (font: string | undefined) => {
+    if (editing && styleSelection({ font })) return
+    setOpts((o) => ({ ...o, font }))
+    patchTexts({ font })
+  }
+
+  /** Colour / stroke / fill / font controls for the selection or the drawing tool in hand. */
+  const styleControls = (compact: boolean) => {
+    const strokes = ['pen', 'marker', 'rect', 'ellipse', 'line', 'arrow'].includes(tool) || styled.some((n) => n.type !== 'text')
+    const fills = ['rect', 'ellipse'].includes(tool) || styled.some((n) => n.shape === 'rect' || n.shape === 'ellipse')
+    const fonts = tool === 'text' || texts.length > 0
+    const colors = drawingTool || styled.length > 0
+    const current = single?.type === 'text' ? single.color : single?.stroke ?? opts.color
+    const row = (title: string, body: React.ReactNode) =>
+      compact ? body : (
+        <div className="bside-row">
+          <div className="bside-label">{title}</div>
+          <div className="bside-ctl">{body}</div>
+        </div>
+      )
+    return (
+      <>
+        {colors &&
+          row(
+            'Цвет',
+            <div className="cv-colors">
+              {COLORS.map((c) => (
+                <button key={c} className={`cv-color${(current ?? opts.color) === c ? ' on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} />
+              ))}
+              <input type="color" value={current ?? opts.color} onChange={(e) => setColor(e.target.value)} title="Свой цвет" />
+            </div>
+          )}
+        {strokes &&
+          row(
+            'Обводка',
+            <div className="bside-chips">
+              {STROKES.map(([label, w]) => (
+                <button key={w} className={`cv-chip${(single?.strokeWidth ?? opts.strokeWidth) === w ? ' on' : ''}`} title={label} onClick={() => setStroke(w)}>
+                  <span style={{ height: Math.max(1, w / 1.5), width: 18, background: 'currentColor', borderRadius: 4, display: 'block' }} />
+                </button>
+              ))}
+            </div>
+          )}
+        {fills &&
+          row(
+            'Заливка',
+            <button className={`cv-chip${(single ? !!single.fill : opts.fill) ? ' on' : ''}`} onClick={() => setFill(!(single ? !!single.fill : opts.fill))}>
+              {(single ? single.fill : opts.fill) ? 'Есть' : 'Нет'}
+            </button>
+          )}
+        {fonts && (
+          <>
+            {!compact && row('Шрифт', <FontPicker value={single?.type === 'text' ? single.font : opts.font} onPick={setFontFamily} onPreview={previewFont} />)}
+            {row(
+              'Размер',
+              <div className="bside-chips">
+                {!compact && <NumField value={single?.fontSize ?? opts.fontSize} min={6} max={400} onCommit={setFont} />}
+                {FONT_SIZES.map(([label, size]) => (
+                  <button key={label} className={`cv-chip${(single?.fontSize ?? opts.fontSize) === size ? ' on' : ''}`} onClick={() => setFont(size)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {texts.length > 0 &&
+              row(
+                'Начертание',
+                <div className="bside-chips">
+                  {([['Обычный', 400], ['Средний', 600], ['Жирный', 700]] as const).map(([label, w]) => (
+                    <button key={w} className={`cv-chip${(single?.weight ?? 600) === w ? ' on' : ''}`} style={{ fontWeight: w }} onClick={() => patchTexts({ weight: w })}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            {texts.length > 0 &&
+              row(
+                'Выравнивание',
+                <div className="bside-chips">
+                  {(['left', 'center', 'right'] as const).map((a) => (
+                    <button key={a} className={`cv-chip${(single?.align ?? 'left') === a ? ' on' : ''}`} onClick={() => patchTexts({ align: a })}>
+                      <Icon name={`align-${a}`} size={15} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            {texts.length > 0 &&
+              !compact &&
+              row(
+                'Ширина',
+                <div className="bside-chips">
+                  <button className={`cv-chip${single?.autoWidth ? ' on' : ''}`} title="Растёт вместе с текстом" onClick={() => patchTexts({ autoWidth: true })}>
+                    Авто
+                  </button>
+                  <button className={`cv-chip${single && !single.autoWidth ? ' on' : ''}`} title="Фиксированная, строки переносятся" onClick={() => patchTexts({ autoWidth: false })}>
+                    Фиксированная
+                  </button>
+                </div>
+              )}
+          </>
+        )}
+      </>
+    )
+  }
+
+  /** Opacity of the selection: live while dragging, one undo step on release. */
+  const opacityControl = () => (
+    <label className="cv-opacity" title="Непрозрачность">
+      <Icon name="eye" size={15} />
+      <input
+        type="range"
+        min={0.1}
+        max={1}
+        step={0.05}
+        value={single?.opacity ?? 1}
+        onChange={(e) => {
+          const v = Number(e.target.value)
+          const next = nodesRef.current.map((n) => (selected.has(n.id) ? { ...n, opacity: v } : n))
+          setNodes(next)
+          nodesRef.current = next
+        }}
+        onPointerUp={() => apply(nodesRef.current)}
+      />
+      <span className="bside-val">{Math.round((single?.opacity ?? 1) * 100)}%</span>
+    </label>
+  )
+
+  /** Board-wide actions: in the side panel's footer, or the compact dock when it's hidden. */
+  const actionButtons = (
+    <>
+      <button className="cv-btn" title="Сохранить копию доски" onClick={() => run(() => api.duplicateBoard(boardId), 'Копия доски создана')}>
+        <Icon name="copy" size={19} />
+      </button>
+      <button className="cv-btn" title="Сохранить картинкой в библиотеку" onClick={() => run(() => api.exportBoard(boardId, 'library'), 'Добавлено в библиотеку')}>
+        <Icon name="save" size={19} />
+      </button>
+      <button className="cv-btn" title="Экспорт" onClick={async () => runExport(await api.menu(exportEntries(false)))}>
+        <Icon name="export" size={19} />
+      </button>
+      <button className="cv-btn accent" title="Отправить в Figma / Miro / PureRef" onClick={sendMenu}>
+        <Icon name="send" size={19} />
+      </button>
+      <span
+        className="cv-btn"
+        draggable
+        title="Перетащите в другую программу — картинки доски отдельными файлами"
+        onDragStart={(e) => {
+          e.preventDefault()
+          const ids = [...new Set(nodesRef.current.filter((n) => n.itemId && items.has(n.itemId)).map((n) => n.itemId!))]
+          if (ids.length) api.startDrag(ids)
+        }}
+      >
+        <Icon name="external" size={19} />
+      </span>
+    </>
+  )
+
+  /** Side panel "Свойства": the selection, else the tool in hand, else the board. */
+  const propsPanel = () => {
+    if (!selNodes.length) {
+      if (drawingTool) {
+        return (
+          <div className="bside-section">
+            <div className="bside-title">{TOOLS.find((t) => t.tool === tool)?.label}</div>
+            {styleControls(false)}
+          </div>
+        )
+      }
+      return (
+        <>
+          <div className="bside-section">
+            <div className="bside-title">Холст</div>
+            <div className="bside-row">
+              <div className="bside-label">Фон</div>
+              <div className="bside-ctl cv-colors">
+                {['#1a1b1f', '#121316', '#26272d', '#3a3b40', '#f4f4f2', '#ffffff', '#efe6d8', '#1e2433'].map((c) => (
+                  <button key={c} className={`cv-color${bg === c ? ' on' : ''}`} style={{ background: c }} onClick={() => (setBg(c), (settingsRef.current.bg = c), save())} />
+                ))}
+                <input type="color" value={bg} onChange={(e) => (setBg(e.target.value), (settingsRef.current.bg = e.target.value), save())} />
+              </div>
+            </div>
+            <label className="check-row">
+              <input type="checkbox" checked={grid} onChange={(e) => (setGrid(e.target.checked), (settingsRef.current.grid = e.target.checked), save())} />
+              Точечная сетка
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={snap} onChange={(e) => (setSnap(e.target.checked), (settingsRef.current.snap = e.target.checked), save())} />
+              Привязка к сетке
+            </label>
+          </div>
+          <details className="bside-section">
+            <summary className="bside-title">Горячие клавиши</summary>
+            <KeysPanel />
+          </details>
+        </>
+      )
+    }
+    const n = single
+    const ids = new Set(selNodes.map((x) => x.id))
+    const geom = (k: 'x' | 'y' | 'w' | 'h' | 'rotation', v: number) =>
+      n && patch(new Set([n.id]), () => ({ [k]: v, ...(n.type === 'text' && k === 'w' ? { autoWidth: false } : {}) }))
+    return (
+      <>
+        <div className="bside-section">
+          <div className="bside-title">
+            <Icon name={n ? LAYER_ICON[n.type] : 'layers'} size={16} />
+            <span className="bside-name">{n ? nodeLabel(n, items) : `Выбрано: ${selNodes.length}`}</span>
+          </div>
+          {n && (
+            <div className="bside-grid">
+              <NumField label="X" value={n.x} onCommit={(v) => geom('x', v)} />
+              <NumField label="Y" value={n.y} onCommit={(v) => geom('y', v)} />
+              <NumField label="Ш" value={n.w} min={1} onCommit={(v) => geom('w', v)} />
+              <NumField label="В" value={n.h} min={1} onCommit={(v) => geom('h', v)} disabled={n.type === 'text'} />
+              <NumField label="°" value={n.rotation ?? 0} onCommit={(v) => geom('rotation', ((v % 360) + 360) % 360)} />
+            </div>
+          )}
+          {n?.type === 'frame' && (
+            <div className="bside-row">
+              <div className="bside-label">Название</div>
+              <input className="bside-ctl" defaultValue={n.name ?? ''} key={n.id} onBlur={(e) => patch(ids, () => ({ name: e.target.value || 'Фрейм' }))} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+            </div>
+          )}
+          {n?.type === 'item' && n.itemId && (
+            <div className="bside-chips">
+              <button className="cv-chip" onClick={() => onOpenItem(n.itemId!)}>Открыть</button>
+              <button className="cv-chip" onClick={() => onLocateItem(n.itemId!)}>В библиотеке</button>
+              <button className="cv-chip" onClick={() => makePalette(n)}>Палитра</button>
+            </div>
+          )}
+        </div>
+        {(styled.length > 0 || (n && (n.type === 'frame' || n.type === 'sticker'))) && (
+          <div className="bside-section">
+            <div className="bside-title">{texts.length ? 'Текст' : 'Стиль'}</div>
+            {styleControls(false)}
+            {n?.type === 'frame' && (
+              <div className="bside-row">
+                <div className="bside-label">Заливка</div>
+                <div className="bside-ctl cv-colors">
+                  {['rgba(255,255,255,0.035)', '#26272d', '#3a3b40', '#ffffff', '#efe6d8', '#1e2433'].map((c) => (
+                    <button key={c} className={`cv-color${(n.fill ?? 'rgba(255,255,255,0.035)') === c ? ' on' : ''}`} style={{ background: c }} onClick={() => patch(ids, () => ({ fill: c }))} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {n?.type === 'sticker' && (
+              <div className="bside-row">
+                <div className="bside-label">Цвет</div>
+                <div className="bside-ctl cv-colors">
+                  {COLORS.map((c) => (
+                    <button key={c} className={`cv-color${n.stroke === c ? ' on' : ''}`} style={{ background: c }} onClick={() => patch(ids, () => ({ stroke: c }))} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="bside-section">
+          <div className="bside-title">Слой</div>
+          {opacityControl()}
+          <div className="bside-chips">
+            <button className="cv-chip" title="Отразить по горизонтали (Shift+H)" onClick={() => patch(ids, (x) => ({ flipX: !x.flipX }))}>
+              <Icon name="flip-h" size={15} />
+            </button>
+            <button className="cv-chip" title="Отразить по вертикали (Shift+V)" onClick={() => patch(ids, (x) => ({ flipY: !x.flipY }))}>
+              <Icon name="flip-v" size={15} />
+            </button>
+            <button className="cv-chip" title="Выше (Ctrl+])" onClick={() => restack('up')}>
+              <Icon name="arrow-up" size={15} />
+            </button>
+            <button className="cv-chip" title="Ниже (Ctrl+[)" onClick={() => restack('down')}>
+              <Icon name="arrow-down" size={15} />
+            </button>
+            <button className={`cv-chip${n?.locked ? ' on' : ''}`} title="Заблокировать (Ctrl+L)" onClick={() => patch(ids, (x) => ({ locked: !n?.locked }))}>
+              <Icon name={n?.locked ? 'lock' : 'unlock'} size={15} />
+            </button>
+            <button className="cv-chip" title="Дублировать (Ctrl+D)" onClick={duplicate}>
+              <Icon name="copy" size={15} />
+            </button>
+            <button className="cv-chip danger" title="Удалить (Del)" onClick={removeSelected}>
+              <Icon name="trash" size={15} />
+            </button>
+          </div>
+        </div>
+      </>
+    )
   }
 
   // ---------- render ----------
 
-  const sorted = [...nodes].filter((n) => !n.hidden).sort((a, b) => a.z - b.z)
+  const sorted = [...nodes]
+    .filter((n) => !n.hidden)
+    .sort((a, b) => a.z - b.z)
+    // Font preview: only how it's drawn, nothing is saved until a font is picked.
+    .map((n) => (fontPreview !== false && n.type === 'text' && selected.has(n.id) ? { ...n, font: fontPreview } : n))
   const single = selNodes.length === 1 ? selNodes[0] : null
   const cursor = effectiveTool === 'pan' ? 'grab' : effectiveTool === 'select' ? 'default' : effectiveTool === 'text' ? 'text' : 'crosshair'
   const gridSize = 24 * view.zoom
 
   return (
+    <div className="board-shell">
     <div
       className={`canvas${preview ? ' preview' : ''}`}
       ref={wrap}
@@ -812,20 +1190,23 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
             editing={editing === n.id}
             onDown={onNodeDown}
             onMenu={nodeMenu}
-            onOpen={() => (n.type === 'text' ? setEditing(n.id) : n.itemId && onOpenItem(n.itemId))}
-            onMeasure={(h) => {
-              // Text grows with its content; keep the stored height in sync without an undo step.
-              const next = nodesRef.current.map((x) => (x.id === n.id ? { ...x, h } : x))
+            onOpen={() => (n.type === 'text' ? startEditing(n.id, null) : n.itemId && onOpenItem(n.itemId))}
+            caret={editing === n.id ? editCaret.current : null}
+            onMeasure={(w, h) => {
+              // Text grows with its content; keep the stored size in sync without an undo step.
+              const next = nodesRef.current.map((x) => (x.id === n.id ? { ...x, h, ...(x.autoWidth ? { w } : {}) } : x))
               setNodes(next)
               nodesRef.current = next
               save()
             }}
-            onTextDone={(text) => {
+            onTextDone={(text, runs) => {
               setEditing(null)
               const cur = nodesRef.current.find((x) => x.id === n.id)
               if (!cur) return
               if (!text.trim()) return apply(nodesRef.current.filter((x) => x.id !== n.id))
-              if (text !== cur.text) apply(nodesRef.current.map((x) => (x.id === n.id ? { ...x, text } : x)))
+              const nextRuns = runs.some((r) => r.color || r.font || r.fontSize || r.weight) ? runs : undefined
+              if (text !== cur.text || JSON.stringify(nextRuns) !== JSON.stringify(cur.runs))
+                apply(nodesRef.current.map((x) => (x.id === n.id ? { ...x, text, runs: nextRuns } : x)))
             }}
           />
         ))}
@@ -875,148 +1256,23 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
             )}
           </div>
 
-          {/* right: board */}
-          <div className="cv-dock cv-right" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="cv-grip" />
-            <button className={`cv-btn${drawer ? ' on' : ''}`} title="Ассеты библиотеки" onClick={() => setDrawer((d) => !d)}>
-              <Icon name="board" size={18} />
-            </button>
-            <button className={`cv-btn${panel === 'layers' ? ' on' : ''}`} title="Слои" onClick={() => setPanel((p) => (p === 'layers' ? null : 'layers'))}>
-              <Icon name="library" size={18} />
-            </button>
-            <button className={`cv-btn${panel === 'settings' ? ' on' : ''}`} title="Настройки холста" onClick={() => setPanel((p) => (p === 'settings' ? null : 'settings'))}>
-              <Icon name="settings" size={18} />
-            </button>
-            <button className={`cv-btn${panel === 'keys' ? ' on' : ''}`} title="Горячие клавиши" onClick={() => setPanel((p) => (p === 'keys' ? null : 'keys'))}>
-              <Icon name="keyboard" size={18} />
-            </button>
-            <div className="cv-sep" />
-            <button className="cv-btn" title="Сохранить копию доски" onClick={() => run(() => api.duplicateBoard(boardId), 'Копия доски создана')}>
-              <Icon name="copy" size={18} />
-            </button>
-            <button className="cv-btn" title="Сохранить картинкой в библиотеку" onClick={() => run(() => api.exportBoard(boardId, 'library'), 'Добавлено в библиотеку')}>
-              <Icon name="save" size={18} />
-            </button>
-            <button className="cv-btn" title="Экспорт" onClick={async () => runExport(await api.menu(exportEntries(false)))}>
-              <Icon name="export" size={18} />
-            </button>
-            <button className="cv-btn accent" title="Отправить в Figma / PureRef / Miro" onClick={sendMenu}>
-              <Icon name="send" size={18} />
-            </button>
-            <span
-              className="cv-btn"
-              draggable
-              title="Перетащите в PureRef, Figma или Miro — картинки доски отдельными файлами"
-              onDragStart={(e) => {
-                e.preventDefault()
-                const ids = [...new Set(nodesRef.current.filter((n) => n.itemId && items.has(n.itemId)).map((n) => n.itemId!))]
-                if (ids.length) api.startDrag(ids)
-              }}
-            >
-              <Icon name="external" size={18} />
-            </span>
-          </div>
-
-          {panel && (
-            <div className="cv-panel" onPointerDown={(e) => e.stopPropagation()}>
-              {panel === 'layers' && (
-                <LayersPanel
-                  nodes={nodes}
-                  items={items}
-                  selected={selected}
-                  onSelect={(id, add) => setSelected((s) => (add ? new Set([...s, id]) : new Set([id])))}
-                  onToggle={(id, key) => patch(new Set([id]), (n) => ({ [key]: !n[key] }))}
-                  onRestack={restack}
-                />
-              )}
-              {panel === 'settings' && (
-                <div className="cv-settings">
-                  <div className="insp-label">Фон холста</div>
-                  <div className="cv-colors">
-                    {['#1a1b1f', '#121316', '#26272d', '#3a3b40', '#f4f4f2', '#ffffff', '#efe6d8', '#1e2433'].map((c) => (
-                      <button key={c} className={`cv-color${bg === c ? ' on' : ''}`} style={{ background: c }} onClick={() => (setBg(c), (settingsRef.current.bg = c), save())} />
-                    ))}
-                    <input type="color" value={bg} onChange={(e) => (setBg(e.target.value), (settingsRef.current.bg = e.target.value), save())} />
-                  </div>
-                  <label className="check-row">
-                    <input type="checkbox" checked={grid} onChange={(e) => (setGrid(e.target.checked), (settingsRef.current.grid = e.target.checked), save())} />
-                    Точечная сетка
-                  </label>
-                  <label className="check-row">
-                    <input type="checkbox" checked={snap} onChange={(e) => (setSnap(e.target.checked), (settingsRef.current.snap = e.target.checked), save())} />
-                    Привязка к сетке
-                  </label>
-                </div>
-              )}
-              {panel === 'keys' && <KeysPanel />}
+          {/* right: compact dock while the side panel is hidden */}
+          {!side.open && (
+            <div className="cv-dock cv-right" onPointerDown={(e) => e.stopPropagation()}>
+              <div className="cv-grip" />
+              <button className="cv-btn" title="Показать панель" onClick={() => setSide((v) => ({ ...v, open: true }))}>
+                <Icon name="panel-right-open" size={20} />
+              </button>
+              <div className="cv-sep" />
+              {actionButtons}
             </div>
           )}
 
-          {showProps && (
+          {/* floating style bar only while the side panel (which has these) is hidden */}
+          {showProps && !side.open && (
             <div className="cv-props" onPointerDown={(e) => e.stopPropagation()}>
-              {(drawingTool || styled.length > 0) && (
-                <>
-                  {COLORS.map((c) => (
-                    <button
-                      key={c}
-                      className={`cv-color${opts.color === c ? ' on' : ''}`}
-                      style={{ background: c }}
-                      onClick={() => setColor(c)}
-                    />
-                  ))}
-                  <input type="color" value={opts.color} onChange={(e) => setColor(e.target.value)} title="Свой цвет" />
-                  <div className="cv-sep v" />
-                </>
-              )}
-              {(['pen', 'marker', 'rect', 'ellipse', 'line', 'arrow'].includes(tool) || styled.some((n) => n.type !== 'text')) &&
-                STROKES.map(([label, w]) => (
-                  <button key={w} className={`cv-chip${opts.strokeWidth === w ? ' on' : ''}`} title={label} onClick={() => setStroke(w)}>
-                    <span style={{ height: Math.max(1, w / 1.5), width: 16, background: 'currentColor', borderRadius: 4, display: 'block' }} />
-                  </button>
-                ))}
-              {(['rect', 'ellipse'].includes(tool) || styled.some((n) => n.shape === 'rect' || n.shape === 'ellipse')) && (
-                <button className={`cv-chip${opts.fill ? ' on' : ''}`} onClick={() => setFill(!opts.fill)} title="Заливка">
-                  Заливка
-                </button>
-              )}
-              {(tool === 'text' || styled.some((n) => n.type === 'text')) && (
-                <>
-                  {FONT_SIZES.map(([label, size]) => (
-                    <button key={label} className={`cv-chip${opts.fontSize === size ? ' on' : ''}`} onClick={() => setFont(size)}>
-                      {label}
-                    </button>
-                  ))}
-                  {styled.some((n) => n.type === 'text') &&
-                    (['left', 'center', 'right'] as const).map((a) => (
-                      <button
-                        key={a}
-                        className={`cv-chip${single?.align === a || (!single?.align && a === 'left') ? ' on' : ''}`}
-                        onClick={() => patch(new Set(styled.filter((n) => n.type === 'text').map((n) => n.id)), () => ({ align: a }))}
-                      >
-                        <Icon name={`align-${a}`} size={14} />
-                      </button>
-                    ))}
-                </>
-              )}
-              {selNodes.length > 0 && (
-                <label className="cv-opacity" title="Непрозрачность">
-                  <Icon name="eye" size={14} />
-                  <input
-                    type="range"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={single?.opacity ?? 1}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      const next = nodesRef.current.map((n) => (selected.has(n.id) ? { ...n, opacity: v } : n))
-                      setNodes(next)
-                      nodesRef.current = next
-                    }}
-                    onPointerUp={() => apply(nodesRef.current)}
-                  />
-                </label>
-              )}
+              {styleControls(true)}
+              {selNodes.length > 0 && opacityControl()}
             </div>
           )}
         </>
@@ -1065,16 +1321,53 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
         </button>
       </div>
 
-      {drawer && !preview && <AssetDrawer onBoard={new Set(nodes.map((n) => n.itemId).filter(Boolean) as string[])} onAdd={(ids) => addItems(ids, center())} onClose={() => setDrawer(false)} version={version} />}
       {toast && <div className="board-toast">{toast}</div>}
       {copyNote && (
         <div className={`board-copy-note${copyNote.busy ? ' busy' : ''}`}>
           <Icon name={copyNote.busy ? 'copy' : 'check'} size={22} />
           <div>
             <div className="board-copy-title">{copyNote.title}</div>
-            {!copyNote.busy && <div className="board-copy-sub">Ctrl+V — вставить с раскладкой в мудборд, Miro, Figma или PureRef</div>}
+            {!copyNote.busy && <div className="board-copy-sub">Ctrl+V — вставить в мудборд, Miro, Figma или PureRef</div>}
           </div>
         </div>
+      )}
+    </div>
+
+      {/* right: side panel (properties / layers / assets), can be hidden */}
+      {!preview && side.open && (
+        <aside className="bside" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="bside-tabs">
+            {(
+              [
+                ['props', 'Свойства'],
+                ['layers', 'Слои'],
+                ['assets', 'Ассеты']
+              ] as const
+            ).map(([t, label]) => (
+              <button key={t} className={`bside-tab${side.tab === t ? ' on' : ''}`} onClick={() => setSide((v) => ({ ...v, tab: t }))}>
+                {label}
+              </button>
+            ))}
+            <button className="cv-btn sm bside-hide" title="Скрыть панель" onClick={() => setSide((v) => ({ ...v, open: false }))}>
+              <Icon name="panel-right-close" size={18} />
+            </button>
+          </div>
+          <div className="bside-body">
+            {side.tab === 'props' && propsPanel()}
+            {side.tab === 'layers' && (
+              <LayersPanel
+                nodes={nodes}
+                items={items}
+                selected={selected}
+                onSelect={(id, add) => setSelected((s) => (add ? new Set([...s, id]) : new Set([id])))}
+                onToggle={(id, key) => patch(new Set([id]), (n) => ({ [key]: !n[key] }))}
+                onRestack={restack}
+              />
+            )}
+            {side.tab === 'assets' && <AssetsPanel onAdd={(ids) => addItems(ids, center())} version={version} />}
+          </div>
+          <div className="bside-actions">{actionButtons}</div>
+        </aside>
       )}
     </div>
   )
@@ -1113,7 +1406,8 @@ export function BoardView({ boardId, version, onSelectItems, onOpenItem, onLocat
     const oy = (hy * h) / 2
     const cx = d.hx || hy ? fixedX + ox * cos - oy * sin : c0x
     const cy = d.hx || hy ? fixedY + ox * sin + oy * cos : c0y
-    return { x: cx - w / 2, y: cy - h / 2, w, h }
+    // Dragging a text box's side fixes its width (auto width off), as in Figma.
+    return { x: cx - w / 2, y: cy - h / 2, w, h, ...(isText ? { autoWidth: false } : {}) }
   }
 }
 
@@ -1128,13 +1422,31 @@ interface NodeProps {
   onDown(e: React.PointerEvent, n: BoardNode): void
   onMenu(e: React.MouseEvent, n: BoardNode): void
   onOpen(): void
-  onTextDone(text: string): void
-  onMeasure(h: number): void
+  onTextDone(text: string, runs: TextRun[]): void
+  /** A text node's rendered size changed (height always; width too for auto-width text). */
+  onMeasure(w: number, h: number): void
+  /** Where the click that started editing was, to put the caret there (null: select all). */
+  caret?: { x: number; y: number } | null
 }
 
-const NodeView = memo(function NodeView({ node: n, item, zoom, selected, editing, onDown, onMenu, onOpen, onTextDone, onMeasure }: NodeProps) {
+const NodeView = memo(function NodeView({ node: n, item, zoom, selected, editing, onDown, onMenu, onOpen, onTextDone, onMeasure, caret }: NodeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState(false)
+  /** Text edit already saved (so the end-of-editing effect doesn't save it twice). */
+  const committed = useRef(false)
+  /** The element being edited: when editing ends from outside it's already swapped for a fresh one. */
+  const editEl = useRef<HTMLDivElement | null>(null)
+  const finishRef = useRef<() => void>(() => {})
+  const wasEditing = useRef(editing)
+  useLayoutEffect(() => {
+    if (editing && !wasEditing.current) committed.current = false
+    // Editing ended from outside (canvas click) while focus sat in the side panel: save now.
+    if (!editing && wasEditing.current) {
+      finishRef.current()
+      editEl.current = null
+    }
+    wasEditing.current = editing
+  }, [editing])
   const style: React.CSSProperties = {
     left: n.x,
     top: n.y,
@@ -1147,40 +1459,90 @@ const NodeView = memo(function NodeView({ node: n, item, zoom, selected, editing
   }
 
   useLayoutEffect(() => {
-    if (editing && ref.current) {
-      ref.current.focus()
-      document.getSelection()?.selectAllChildren(ref.current)
-    }
+    const el = ref.current
+    if (!editing || !el) return
+    el.focus()
+    const sel = document.getSelection()
+    // Caret where the double-click was (as in Figma); new or menu-opened text gets everything selected.
+    const at = caret && document.caretRangeFromPoint?.(caret.x, caret.y)
+    if (sel && at && el.contains(at.startContainer)) {
+      sel.removeAllRanges()
+      sel.addRange(at)
+    } else sel?.selectAllChildren(el)
   }, [editing])
 
   useLayoutEffect(() => {
     if (n.type !== 'text' || !ref.current || n.id === 'draft') return
+    const w = ref.current.offsetWidth
     const h = ref.current.offsetHeight
-    if (Math.abs(h - n.h) > 1) onMeasure(h)
+    if (Math.abs(h - n.h) > 1 || (n.autoWidth && Math.abs(w - n.w) > 1)) onMeasure(w, h)
   })
 
   const common = {
     onPointerDown: (e: React.PointerEvent) => onDown(e, n),
-    onDoubleClick: onOpen,
     onContextMenu: (e: React.MouseEvent) => onMenu(e, n)
   }
 
   if (n.type === 'text') {
+    // Finishing an edit: on blur (unless focus went to the side panel, e.g. to style the
+    // selected part) or when the board ends editing (click on the canvas).
+    const finish = () => {
+      const el = editEl.current ?? ref.current
+      if (committed.current || !el) return
+      committed.current = true
+      const runs = readRuns(el, n)
+      onTextDone(runs.map((r) => r.text).join(''), runs)
+    }
+    finishRef.current = finish
     return (
       <div
-        ref={ref}
-        className={`bnode btext${selected ? ' selected' : ''}`}
-        style={{ ...style, fontSize: n.fontSize ?? 22, color: n.color ?? '#e8e9ee', textAlign: n.align ?? 'left' }}
+        // A fresh element per mode: React must not reconcile children the user has edited.
+        key={editing ? 'edit' : 'view'}
+        ref={(el) => {
+          ref.current = el
+          if (editing && el) editEl.current = el
+        }}
+        className={`bnode btext${selected ? ' selected' : ''}${n.autoWidth ? ' auto' : ''}`}
+        style={{
+          ...style,
+          width: n.autoWidth ? undefined : n.w,
+          fontSize: n.fontSize ?? 22,
+          fontWeight: n.weight ?? 600,
+          fontFamily: n.font ? textFont(n) : undefined,
+          color: n.color ?? '#e8e9ee',
+          textAlign: n.align ?? 'left'
+        }}
         contentEditable={editing}
         suppressContentEditableWarning
         {...common}
         onPointerDown={(e) => (editing ? e.stopPropagation() : onDown(e, n))}
-        onBlur={(e) => editing && onTextDone(e.currentTarget.innerText)}
+        onBlur={(e) => {
+          if (!editing) return
+          const to = e.relatedTarget as Element | null
+          if (!to?.closest('.bside')) finish()
+        }}
+        onPaste={(e) => {
+          // Plain text only; styles come from the side panel.
+          e.preventDefault()
+          document.execCommand('insertText', false, e.clipboardData.getData('text/plain'))
+        }}
         onKeyDown={(e) => {
+          // Enter makes a new line (as in Figma); Esc or a click outside finishes editing.
           if (e.key === 'Escape') (e.target as HTMLElement).blur()
+          else if (e.key === 'Enter') {
+            e.preventDefault()
+            document.execCommand('insertLineBreak')
+          }
+          e.stopPropagation()
         }}
       >
-        {n.text}
+        {n.runs?.length
+          ? n.runs.map((r, i) => (
+              <span key={i} style={runCss(r)}>
+                {r.text}
+              </span>
+            ))
+          : n.text}
       </div>
     )
   }
@@ -1205,6 +1567,149 @@ const NodeView = memo(function NodeView({ node: n, item, zoom, selected, editing
     </div>
   )
 })
+
+// ---------- rich text ----------
+
+/** Inline style of a text run (unset fields inherit the node's). */
+function runCss(r: Partial<TextRun>): React.CSSProperties {
+  return {
+    color: r.color,
+    fontFamily: r.font ? `'${r.font}', 'Segoe UI', Arial, sans-serif` : undefined,
+    fontSize: r.fontSize,
+    fontWeight: r.weight
+  }
+}
+
+/** Last selection inside the text being edited — kept while the side panel has the focus. */
+let textRange: Range | null = null
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection()
+  if (!sel?.rangeCount) return
+  const r = sel.getRangeAt(0)
+  const at = r.commonAncestorContainer
+  if ((at instanceof Element ? at : at.parentElement)?.closest('.btext[contenteditable="true"]')) textRange = r.cloneRange()
+})
+
+const toHex = (c: string) => {
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c)
+  return m ? `#${[m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')}` : c
+}
+
+/** The edited text back as runs: walks the spans' inline styles; <br> is a line break. */
+function readRuns(el: HTMLElement, base: BoardNode): TextRun[] {
+  const out: TextRun[] = []
+  const push = (text: string, st: Omit<TextRun, 'text'>) => {
+    if (!text) return
+    const last = out[out.length - 1]
+    if (last && sameStyle(last, st as TextRun)) last.text += text
+    else out.push({ ...st, text })
+  }
+  const walk = (node: Node, st: Omit<TextRun, 'text'>) => {
+    if (node.nodeType === Node.TEXT_NODE) return push(node.textContent ?? '', st)
+    if (!(node instanceof HTMLElement)) return
+    // A trailing <br> only keeps an empty last line visible while typing — it isn't text.
+    if (node.tagName === 'BR') return node === el.lastChild || (node.parentElement !== el && node === node.parentElement?.lastChild && node.previousSibling === null) ? undefined : push('\n', st)
+    const s = { ...st }
+    const cs = node.style
+    if (cs.color) s.color = toHex(cs.color)
+    const family = cs.fontFamily.split(',')[0].replace(/['"]/g, '').trim()
+    if (family && family !== 'undefined') s.font = family
+    if (cs.fontSize) s.fontSize = parseFloat(cs.fontSize)
+    if (cs.fontWeight) s.weight = Number(cs.fontWeight) || (cs.fontWeight === 'bold' ? 700 : undefined)
+    // Pasted or browser-made blocks start a new line.
+    if (node !== el && /^(DIV|P)$/.test(node.tagName) && out.length && !out[out.length - 1].text.endsWith('\n')) push('\n', st)
+    node.childNodes.forEach((c) => walk(c, s))
+  }
+  el.childNodes.forEach((c) => walk(c, {}))
+  // Styles equal to the node's own are dropped; all plain = no runs at all.
+  const clean = out.map((r) => ({
+    text: r.text,
+    color: r.color && r.color !== (base.color ?? '#e8e9ee') ? r.color : undefined,
+    font: r.font && r.font !== base.font ? r.font : undefined,
+    fontSize: r.fontSize && r.fontSize !== (base.fontSize ?? 22) ? r.fontSize : undefined,
+    weight: r.weight && r.weight !== (base.weight ?? 600) ? r.weight : undefined
+  }))
+  const merged: TextRun[] = []
+  for (const r of clean) {
+    const last = merged[merged.length - 1]
+    if (last && sameStyle(last, r)) last.text += r.text
+    else merged.push(r)
+  }
+  // All in the node's own style: plain text, no runs (the caller joins the text itself).
+  return merged.every((r) => !r.color && !r.font && !r.fontSize && !r.weight) ? merged.map((r) => ({ text: r.text })) : merged
+}
+
+/** The selected part while a font is being previewed on it: the wrapper shown, the original kept. */
+let partPreview: { span: HTMLSpanElement; original: DocumentFragment } | null = null
+
+/**
+ * Shows `font` on the selected part of the text being edited, as Photoshop does while browsing
+ * fonts; `false` puts the original back. Returns false when there's no selected part.
+ */
+function previewPartFont(font: string | undefined | false): boolean {
+  if (font === false) {
+    if (!partPreview) return true
+    const { span, original } = partPreview
+    partPreview = null
+    const nodes = [...original.childNodes]
+    if (!span.isConnected || !nodes.length) return true
+    span.replaceWith(...nodes)
+    const r = document.createRange()
+    r.setStartBefore(nodes[0])
+    r.setEndAfter(nodes[nodes.length - 1])
+    const sel = document.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(r)
+    textRange = r.cloneRange()
+    return true
+  }
+  if (!partPreview) {
+    const r = textRange
+    const at = r?.commonAncestorContainer
+    const host = at && (at instanceof Element ? at : at.parentElement)?.closest('.btext[contenteditable="true"]')
+    if (!r || r.collapsed || !host) return false
+    const original = r.cloneContents()
+    const span = document.createElement('span')
+    span.appendChild(r.extractContents())
+    r.insertNode(span)
+    partPreview = { span, original }
+  }
+  const { span } = partPreview
+  span.style.fontFamily = font ? `'${font}', 'Segoe UI', Arial, sans-serif` : ''
+  // Inner pieces' own fonts would hide the preview; the original comes back on restore anyway.
+  span.querySelectorAll('span').forEach((x) => (x.style.fontFamily = ''))
+  return true
+}
+
+/**
+ * Styles just the selected part of the text being edited (Figma-like mixed styles). Returns false
+ * when there's no such selection — then the style goes to the whole text instead.
+ */
+function styleSelection(p: Partial<TextRun>): boolean {
+  const r = textRange
+  const at = r?.commonAncestorContainer
+  const host = at && (at instanceof Element ? at : at.parentElement)?.closest<HTMLElement>('.btext[contenteditable="true"]')
+  if (!r || r.collapsed || !host) return false
+  // Only the properties being set (an undefined one would land as the string "undefined").
+  const css = Object.fromEntries(Object.entries(runCss(p)).filter(([, v]) => v !== undefined)) as React.CSSProperties
+  const span = document.createElement('span')
+  Object.assign(span.style, css)
+  const frag = r.extractContents()
+  // Inner pieces drop the same property so the new value shows.
+  frag.querySelectorAll('span').forEach((x) => {
+    for (const k of Object.keys(css) as (keyof React.CSSProperties)[]) if (css[k] !== undefined) (x.style as unknown as Record<string, string>)[k] = ''
+  })
+  span.appendChild(frag)
+  r.insertNode(span)
+  const next = document.createRange()
+  next.selectNodeContents(span)
+  host.focus()
+  const sel = document.getSelection()
+  sel?.removeAllRanges()
+  sel?.addRange(next)
+  textRange = next.cloneRange()
+  return true
+}
 
 // ---------- selection chrome ----------
 
@@ -1248,6 +1753,144 @@ function GroupBox({ nodes, zoom }: { nodes: BoardNode[]; zoom: number }) {
 
 // ---------- side panels ----------
 
+/** What a node is called in the layers list and the properties header. */
+function nodeLabel(n: BoardNode, items: Map<string, ItemLite>): string {
+  if (n.type === 'item') return items.get(n.itemId!)?.name ?? 'Файл'
+  if (n.type === 'text') return (n.text ?? '').split('\n')[0].slice(0, 30) || 'Текст'
+  if (n.type === 'shape') return { rect: 'Прямоугольник', ellipse: 'Эллипс', line: 'Линия', arrow: 'Стрелка' }[n.shape ?? 'rect']
+  if (n.type === 'path') return 'Рисунок'
+  if (n.type === 'palette') return 'Палитра'
+  if (n.type === 'sticker') return 'Стикер'
+  return n.name ?? 'Фрейм'
+}
+
+let fontsCache: Promise<string[]> | null = null
+/** Icon / symbol fonts: their glyphs aren't letters, so their names stay in the UI font. */
+const SYMBOL_FONT = /dings|webdings|^symbol$|marlett|mdl2|fluent icons|mt extra|emoji|bookshelf symbol/i
+const ownFont = (f: string): React.CSSProperties | undefined => (SYMBOL_FONT.test(f) ? undefined : { fontFamily: `'${f}'` })
+
+/** Font family dropdown: installed fonts, searchable, each name shown in its own font. */
+function FontPicker({ value, onPick, onPreview }: { value?: string; onPick(font: string | undefined): void; onPreview(font: string | undefined | false): void }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [list, setList] = useState<string[]>([])
+  /** Row under the arrow keys: -1 = "default", then the shown fonts. */
+  const [active, setActive] = useState<number | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const close = () => {
+    setOpen(false)
+    setQ('')
+    setActive(null)
+    onPreview(false)
+  }
+  useEffect(() => {
+    if (!open) return
+    void (fontsCache ??= api.fonts()).then(setList)
+    const out = (e: PointerEvent) => box.current && !box.current.contains(e.target as Node) && close()
+    document.addEventListener('pointerdown', out, true)
+    return () => document.removeEventListener('pointerdown', out, true)
+  }, [open])
+  useEffect(() => () => onPreview(false), [])
+  const needle = q.trim().toLowerCase()
+  const shown = (needle ? list.filter((f) => f.toLowerCase().includes(needle)) : list).slice(0, 300)
+  const first = needle ? 0 : -1
+  const fontAt = (i: number) => (i < 0 ? undefined : shown[i])
+  const pick = (f: string | undefined) => {
+    onPreview(false)
+    onPick(f)
+    setOpen(false)
+    setQ('')
+    setActive(null)
+  }
+  // Arrow keys move through the list and preview on the board, as in Figma.
+  const move = (d: number) => {
+    const i = Math.max(first, Math.min(shown.length - 1, (active ?? first - (d > 0 ? 1 : 0)) + d))
+    setActive(i)
+    onPreview(fontAt(i))
+    listRef.current?.querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' })
+  }
+  return (
+    <div className="font-pick" ref={box}>
+      <button className="font-pick-btn" onClick={() => (open ? close() : setOpen(true))}>
+        <span style={value ? ownFont(value) : undefined}>{value ?? 'По умолчанию'}</span>
+        <Icon name="chevron-down" size={14} />
+      </button>
+      {open && (
+        <div className="font-pick-pop">
+          <input
+            autoFocus
+            placeholder="Найти шрифт…"
+            value={q}
+            onChange={(e) => (setQ(e.target.value), setActive(null), onPreview(false))}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') close()
+              else if (e.key === 'ArrowDown') (e.preventDefault(), move(1))
+              else if (e.key === 'ArrowUp') (e.preventDefault(), move(-1))
+              else if (e.key === 'Enter') {
+                if (active !== null) pick(fontAt(active))
+                else if (shown[0]) pick(shown[0])
+              }
+            }}
+          />
+          {/* Hovering a font shows it on the selected text; leaving the list puts the old one back. */}
+          <div className="font-pick-list" ref={listRef} onMouseLeave={() => active === null && onPreview(false)}>
+            {!needle && (
+              <button data-i={-1} className={`${!value ? 'on' : ''}${active === -1 ? ' active' : ''}`} onMouseEnter={() => onPreview(undefined)} onClick={() => pick(undefined)}>
+                <span className="font-pick-name">По умолчанию</span>
+              </button>
+            )}
+            {shown.map((f, i) => (
+              // Each name is drawn in its own font, as in Figma (symbol fonts excepted).
+              <button
+                key={f}
+                data-i={i}
+                className={`${value === f ? 'on' : ''}${active === i ? ' active' : ''}`}
+                onMouseEnter={() => (setActive(null), onPreview(f))}
+                onClick={() => pick(f)}
+                title={f}
+              >
+                <span className="font-pick-name" style={ownFont(f)}>
+                  {f}
+                </span>
+              </button>
+            ))}
+            {!shown.length && <div className="muted font-pick-empty">{list.length ? 'Ничего не найдено' : 'Загружаю шрифты…'}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Number input that commits on Enter / blur (one undo step), like Figma's fields. */
+function NumField({ label, value, min, max, disabled, onCommit }: { label?: string; value: number; min?: number; max?: number; disabled?: boolean; onCommit(v: number): void }) {
+  const [text, setText] = useState(String(Math.round(value)))
+  useEffect(() => setText(String(Math.round(value))), [value])
+  const commit = () => {
+    const v = Number(text.replace(',', '.'))
+    if (!Number.isFinite(v)) return setText(String(Math.round(value)))
+    const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v))
+    if (Math.round(c) !== Math.round(value)) onCommit(c)
+    else setText(String(Math.round(value)))
+  }
+  return (
+    <label className={`bside-num${disabled ? ' disabled' : ''}`}>
+      {label && <span>{label}</span>}
+      <input
+        value={text}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') (setText(String(Math.round(value))), (e.target as HTMLInputElement).blur())
+        }}
+      />
+    </label>
+  )
+}
+
 const LAYER_ICON: Record<string, string> = { item: 'image', text: 'type', shape: 'square', path: 'pencil', palette: 'palette', sticker: 'sticker', frame: 'frame' }
 
 function LayersPanel({
@@ -1265,20 +1908,7 @@ function LayersPanel({
   onToggle(id: string, key: 'hidden' | 'locked'): void
   onRestack(mode: 'up' | 'down'): void
 }) {
-  const label = (n: BoardNode) =>
-    n.type === 'item'
-      ? items.get(n.itemId!)?.name ?? 'Файл'
-      : n.type === 'text'
-        ? (n.text ?? '').slice(0, 30) || 'Текст'
-        : n.type === 'shape'
-          ? { rect: 'Прямоугольник', ellipse: 'Эллипс', line: 'Линия', arrow: 'Стрелка' }[n.shape ?? 'rect']
-          : n.type === 'path'
-            ? 'Рисунок'
-            : n.type === 'palette'
-              ? 'Палитра'
-              : n.type === 'sticker'
-                ? 'Стикер'
-                : n.name ?? 'Фрейм'
+  const label = (n: BoardNode) => nodeLabel(n, items)
   return (
     <div className="cv-layers">
       <div className="cv-panel-head">
@@ -1352,11 +1982,13 @@ function KeysPanel() {
   )
 }
 
-// ---------- asset drawer ----------
+// ---------- assets tab ----------
 
-function AssetDrawer({ onBoard, onAdd, onClose, version }: { onBoard: Set<string>; onAdd(ids: string[]): void; onClose(): void; version: number }) {
+/** The library in the side panel: click or drag a picture onto the board; a check flashes on what was just added. */
+function AssetsPanel({ onAdd, version }: { onAdd(ids: string[]): void; version: number }) {
   const [q, setQ] = useState('')
   const [list, setList] = useState<ItemLite[]>([])
+  const [added, setAdded] = useState<Set<string>>(new Set())
   useEffect(() => {
     const t = setTimeout(() => {
       api
@@ -1365,22 +1997,23 @@ function AssetDrawer({ onBoard, onAdd, onClose, version }: { onBoard: Set<string
     }, 150)
     return () => clearTimeout(t)
   }, [q, version])
+  const add = (id: string) => {
+    onAdd([id])
+    setAdded((s) => new Set(s).add(id))
+    window.setTimeout(() => setAdded((s) => (s.delete(id), new Set(s))), 1200)
+  }
 
   return (
-    <div className="board-drawer" onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
-      <div className="board-drawer-head">
-        <input autoFocus placeholder="Поиск по библиотеке…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="icon-btn small" onClick={onClose}>
-          <Icon name="close" size={13} />
-        </button>
-      </div>
-      <div className="muted board-drawer-tip">Перетащите на холст или нажмите +</div>
+    <div className="bside-assets" onContextMenu={(e) => e.stopPropagation()}>
+      <input className="bside-search" placeholder="Поиск по библиотеке…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="muted bside-tip">Нажмите на картинку или перетащите её на холст</div>
       <div className="board-drawer-grid">
         {list.map((it) => (
           <div
             key={it.id}
-            className={`drawer-cell${onBoard.has(it.id) ? ' on' : ''}`}
+            className={`drawer-cell${added.has(it.id) ? ' added' : ''}`}
             draggable
+            onClick={() => add(it.id)}
             onDragStart={(e) => {
               e.dataTransfer.setData(ITEMS_MIME, JSON.stringify([it.id]))
               e.dataTransfer.effectAllowed = 'copy'
@@ -1388,9 +2021,9 @@ function AssetDrawer({ onBoard, onAdd, onClose, version }: { onBoard: Set<string
             title={it.name}
           >
             {it.thumb === 1 ? <img src={thumbUrl(it.id, it.thumbV)} alt="" draggable={false} /> : <div className="tile-ph">{it.ext.toUpperCase()}</div>}
-            <button className="drawer-add" onClick={() => onAdd([it.id])} title="Добавить на холст">
-              <Icon name={onBoard.has(it.id) ? 'check' : 'plus'} size={13} strokeWidth={2.5} />
-            </button>
+            <span className="drawer-add">
+              <Icon name={added.has(it.id) ? 'check' : 'plus'} size={14} strokeWidth={2.5} />
+            </span>
           </div>
         ))}
       </div>

@@ -210,6 +210,15 @@ export interface MenuEntry {
 
 export type BoardNodeType = 'item' | 'text' | 'shape' | 'path' | 'palette' | 'sticker' | 'frame'
 
+/** A piece of a text node with its own style (unset fields use the node's). */
+export interface TextRun {
+  text: string
+  color?: string
+  font?: string
+  fontSize?: number
+  weight?: number
+}
+
 export interface BoardNode {
   id: string
   type: BoardNodeType
@@ -233,6 +242,17 @@ export interface BoardNode {
   fontSize?: number
   color?: string
   align?: 'left' | 'center' | 'right'
+  /** 400 regular, 600 semibold (default), 700 bold. */
+  weight?: number
+  /** Font family name (an installed font); unset = the app's default. */
+  font?: string
+  /**
+   * Parts of the text styled on their own (Figma-like mixed styles); joined, they equal `text`.
+   * A field left out falls back to the node's own style. Unset = the whole text in one style.
+   */
+  runs?: TextRun[]
+  /** Width follows the text (lines break only at Enter), as Figma's "auto width". Off = fixed width, wrapping. */
+  autoWidth?: boolean
   // shape / path
   shape?: 'rect' | 'ellipse' | 'line' | 'arrow'
   stroke?: string

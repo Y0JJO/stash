@@ -43,7 +43,7 @@ export function encodeMiroHtml(clip: MiroClip): string {
 }
 
 export interface LayoutEntry {
-  /** 1-based number the file name starts with ("007 name.png"). */
+  /** 1-based paint order. */
   n: number
   cx: number
   cy: number
@@ -80,24 +80,6 @@ function place(j: MiroImage['widgetData']['json'], l: LayoutEntry, frames: Frame
   if (!j._parent) j.relativeScale = scale
   j.rotation = { rotation: 0 }
   j.relativeRotation = 0
-}
-
-/**
- * Puts every copied image whose file name starts with a layer number at that layer's place and
- * size (Miro offsets are centres relative to the selection's centre). Returns how many matched.
- */
-export function arrangeMiroClip(clip: MiroClip, layout: LayoutEntry[]): number {
-  const byN = new Map(layout.map((l) => [l.n, l]))
-  let matched = 0
-  for (const o of clip.data.objects) {
-    const j = o.widgetData?.json
-    const num = /^(\d{3}) /.exec(j?.resource?.name ?? '')
-    const l = num && byN.get(Number(num[1]))
-    if (!j || !l) continue
-    place(j, l)
-    matched++
-  }
-  return matched
 }
 
 /**
