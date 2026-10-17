@@ -1447,17 +1447,19 @@ textarea {
   overflow: hidden;
 }
 .zoom-stage img {
-  max-width: calc(100% - 48px);
-  max-height: calc(100% - 48px);
+  flex: none;
   object-fit: contain;
   transform-origin: center;
   will-change: transform;
 }
 .zoom-badge {
   position: absolute;
+  z-index: 2;
   bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
+  border: none;
+  color: #fff;
   background: rgba(0, 0, 0, 0.6);
   padding: 2px 10px;
   border-radius: 10px;
@@ -2791,6 +2793,7 @@ button:has(> .icon),
   position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2798,9 +2801,10 @@ button:has(> .icon),
 }
 .player-stage video,
 .player-stage canvas {
-  max-width: 100%;
-  max-height: 100%;
+  flex: none;
   outline: none;
+  transform-origin: center;
+  will-change: transform;
 }
 .player-note {
   position: absolute;

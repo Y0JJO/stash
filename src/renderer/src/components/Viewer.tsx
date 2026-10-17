@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import type { ItemLite } from '../../../shared/types'
 import { api, fileUrl, thumbUrl } from '../api'
-import { BROWSER_IMAGE, BROWSER_VIDEO, clamp, dims } from '../util'
+import { BROWSER_IMAGE, BROWSER_VIDEO, dims } from '../util'
+import { useFit, useZoomPan } from '../zoom'
 import { VideoPlayer } from './VideoPlayer'
 import { useSettings } from '../settings'
 
@@ -73,6 +74,7 @@ export function Viewer({ items, index, onIndex, onClose, onGrabFrame }: Props) {
             key={item.id}
             src={item.kind === 'image' && BROWSER_IMAGE.has(item.ext) ? fileUrl(item.id) : item.thumb === 1 ? thumbUrl(item.id, item.thumbV) : null}
             label={item.ext.toUpperCase()}
+            size={item.width && item.height ? { w: item.width, h: item.height } : null}
             onStep={(dir) => {
               const next = index + dir
               if (next >= 0 && next < items.length) onIndex(next)
@@ -94,23 +96,34 @@ export function Viewer({ items, index, onIndex, onClose, onGrabFrame }: Props) {
   )
 }
 
-function ZoomImage({ src, label, onStep }: { src: string | null; label: string; onStep(dir: number): void }) {
+function ZoomImage({ src, label, size, onStep }: { src: string | null; label: string; size: { w: number; h: number } | null; onStep(dir: number): void }) {
   const prefs = useSettings()
-  const [t, setT] = useState({ s: 1, x: 0, y: 0 })
   const stage = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
+  const [natural, setNatural] = useState(size)
+  const fit = useFit(stage, natural)
+  const z = useZoomPan(stage)
+  const startedOriginal = useRef(false)
 
-  // Zoom keeping the point under the cursor fixed.
-  const zoomAt = (clientX: number, clientY: number, next: number) => {
-    const r = stage.current!.getBoundingClientRect()
-    const cx = clientX - r.left - r.width / 2
-    const cy = clientY - r.top - r.height / 2
-    setT((p) => {
-      const s = clamp(next, 0.2, 32)
-      const k = s / p.s
-      return s === 1 ? { s: 1, x: 0, y: 0 } : { s, x: cx - (cx - p.x) * k, y: cy - (cy - p.y) * k }
-    })
-  }
+  // "Исходный размер": start at 100% (a zoom of 1 / fit scale) instead of fitting the window.
+  useEffect(() => {
+    if (!fit || startedOriginal.current || prefs.imageDefaultSize !== 'original') return
+    startedOriginal.current = true
+    if (fit.scale > 1.001 || fit.scale < 0.999) z.set({ s: 1 / fit.scale, x: 0, y: 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fit?.scale, prefs.imageDefaultSize])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey) return
+      if (e.key === '+' || e.key === '=') z.zoomAt(z.t.s * 1.25)
+      else if (e.key === '-') z.zoomAt(z.t.s / 1.25)
+      else if (e.key === '0') z.reset()
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (!src) return <div className="viewer-ph">{label}</div>
 
@@ -120,19 +133,10 @@ function ZoomImage({ src, label, onStep }: { src: string | null; label: string; 
       className="zoom-stage"
       onWheel={(e) =>
         // Ctrl always zooms; otherwise the wheel follows the "Управление" preference.
-        prefs.imageWheel === 'navigate' && !e.ctrlKey ? onStep(e.deltaY > 0 ? 1 : -1) : zoomAt(e.clientX, e.clientY, t.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2))
+        prefs.imageWheel === 'navigate' && !e.ctrlKey ? onStep(e.deltaY > 0 ? 1 : -1) : z.zoomAt(z.t.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY)
       }
-      onDoubleClick={(e) => (t.s === 1 ? zoomAt(e.clientX, e.clientY, 2.5) : setT({ s: 1, x: 0, y: 0 }))}
-      onMouseDown={(e) => {
-        if (e.button !== 0) return
-        drag.current = { x: e.clientX, y: e.clientY, ox: t.x, oy: t.y }
-      }}
-      onMouseMove={(e) => {
-        const d = drag.current
-        if (d) setT((p) => ({ ...p, x: d.ox + e.clientX - d.x, y: d.oy + e.clientY - d.y }))
-      }}
-      onMouseUp={() => (drag.current = null)}
-      onMouseLeave={() => (drag.current = null)}
+      onDoubleClick={(e) => (z.t.s === 1 ? z.zoomAt(2.5, e.clientX, e.clientY) : z.reset())}
+      {...z.handlers}
     >
       <img
         src={src}
@@ -140,17 +144,21 @@ function ZoomImage({ src, label, onStep }: { src: string | null; label: string; 
         draggable={false}
         className={prefs.transparentGrid ? 'checker' : undefined}
         onLoad={(e) => {
-          // "Исходный размер": start at 100% instead of fitting the window.
           const img = e.currentTarget
-          if (prefs.imageDefaultSize === 'original' && img.clientWidth && img.naturalWidth > img.clientWidth) setT({ s: img.naturalWidth / img.clientWidth, x: 0, y: 0 })
+          if (!natural || natural.w !== img.naturalWidth || natural.h !== img.naturalHeight) setNatural({ w: img.naturalWidth, h: img.naturalHeight })
         }}
         style={{
-          transform: `translate(${t.x}px, ${t.y}px) scale(${t.s})`,
-          cursor: t.s > 1 ? 'grab' : 'zoom-in',
+          ...(fit ? { width: fit.width, height: fit.height } : { maxWidth: '100%', maxHeight: '100%' }),
+          ...z.style,
+          cursor: z.t.s > 1 ? 'grab' : 'zoom-in',
           imageRendering: prefs.imageSmoothing === 'pixelated' ? 'pixelated' : 'auto'
         }}
       />
-      {t.s !== 1 && <div className="zoom-badge">{Math.round(t.s * 100)}%</div>}
+      {z.t.s !== 1 && (
+        <button className="zoom-badge" onClick={z.reset} title="Вписать в окно (0)">
+          {Math.round(z.t.s * (fit?.scale ?? 1) * 100)}%
+        </button>
+      )}
     </div>
   )
 }

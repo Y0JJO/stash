@@ -5,6 +5,7 @@ import { clamp, keyOf, loadPref, savePref } from '../util'
 import { Icon } from './Icon'
 import { getSettings, useSettings } from '../settings'
 import { GifMedia } from '../gifMedia'
+import { useFit, useZoomPan } from '../zoom'
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4, 8]
 
@@ -40,6 +41,11 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
   const video = useRef<Media | null>(null)
   const stage = useRef<HTMLDivElement>(null)
   const bar = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
+  // Fitted into the window whatever its size; Alt+wheel / + − zoom into a point, drag pans.
+  const [natural, setNatural] = useState(item.width && item.height ? { w: item.width, h: item.height } : null)
+  const fit = useFit(area, natural)
+  const z = useZoomPan(area)
   const [playing, setPlaying] = useState(false)
   const [time, setTime] = useState(0)
   const [duration, setDuration] = useState(item.duration ?? 0)
@@ -74,6 +80,9 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
   /** Duration, saved position and the player's settings, once the media knows its length. */
   const onReady = (v: Media) => {
     setDuration(v.duration || item.duration || 0)
+    const w = v instanceof GifMedia ? (area.current?.querySelector('canvas')?.width ?? 0) : v.videoWidth
+    const h = v instanceof GifMedia ? (area.current?.querySelector('canvas')?.height ?? 0) : v.videoHeight
+    if (w && h && (natural?.w !== w || natural?.h !== h)) setNatural({ w, h })
     if (v instanceof GifMedia) setFps(v.duration ? v.frameCount / v.duration : 10)
     if (prefs.videoRememberPosition) {
       const saved = Number(localStorage.getItem(`stash.pos.${item.id}`))
@@ -325,7 +334,8 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
       e.preventDefault()
       const dir = e.deltaY > 0 || e.deltaX > 0 ? 1 : -1
       const p = getSettings()
-      if (e.ctrlKey) stepFrames(dir)
+      if (e.altKey) z.zoomBy(dir < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY)
+      else if (e.ctrlKey) stepFrames(dir)
       else if (p.videoWheel === 'volume') {
         const next = clamp(Math.round((volume - dir * 0.05) * 100) / 100, 0, 1)
         setVolume(next)
@@ -358,6 +368,9 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
       else if (k === 'i' && !e.ctrlKey) mark('a', video.current?.currentTime ?? 0)
       else if (k === 'o' && !e.ctrlKey) mark('b', video.current?.currentTime ?? 0)
       else if (k === 'x' && !e.ctrlKey && trim) setTrim(null)
+      else if ((e.key === '+' || e.key === '=') && !e.ctrlKey) z.zoomBy(1.25)
+      else if (e.key === '-' && !e.ctrlKey) z.zoomBy(1 / 1.25)
+      else if (e.key === '0' && !e.ctrlKey) z.reset()
       else if (e.key === '[') changeSpeed(-1)
       else if (e.key === ']') changeSpeed(1)
       else return
@@ -387,20 +400,26 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
   const label = (t: number) => (frames ? String(frameOf(t)) : fmtMs(startOf(frameOf(t))))
   const progress = duration ? (time / duration) * 100 : 0
 
+  const mediaStyle: React.CSSProperties = {
+    ...(fit ? { width: fit.width, height: fit.height } : { maxWidth: '100%', maxHeight: '100%' }),
+    ...z.style
+  }
+
   return (
     <div className={`player${full ? ' full' : ''}`} ref={stage}>
-      <div className="player-stage" onClick={toggle} onDoubleClick={toggleFull}>
+      <div className="player-stage" ref={area} onClick={() => !z.dragged() && toggle()} onDoubleClick={toggleFull} {...z.handlers}>
         {gif ? (
           <canvas
             ref={gifCanvas}
             className={prefs.transparentGrid ? 'checker' : undefined}
-            style={{ imageRendering: prefs.imageSmoothing === 'pixelated' ? 'pixelated' : 'auto' }}
+            style={{ ...mediaStyle, imageRendering: prefs.imageSmoothing === 'pixelated' ? 'pixelated' : 'auto' }}
           />
         ) : (
         <video
           ref={(el) => {
             if (el) video.current = el
           }}
+          style={mediaStyle}
           key={item.id}
           src={fileUrl(item.id)}
           autoPlay={prefs.videoAutoplay}
@@ -413,6 +432,11 @@ export function VideoPlayer({ item, gif, onGrab }: Props) {
         />
         )}
         {note && <div className="player-note">{note}</div>}
+        {z.t.s !== 1 && (
+          <button className="zoom-badge" onClick={(e) => (e.stopPropagation(), z.reset())} title="Вписать в окно (0)">
+            {Math.round(z.t.s * (fit?.scale ?? 1) * 100)}%
+          </button>
+        )}
       </div>
 
       {trim && (
