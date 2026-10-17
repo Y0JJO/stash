@@ -2865,7 +2865,7 @@ button:has(> .icon),
 }
 .pl-time {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   height: 30px;
   padding: 0 8px;
@@ -2886,6 +2886,10 @@ button:has(> .icon),
 }
 .pl-time em {
   font-style: normal;
+  /* Small caps sit on the digits' baseline rather than in the middle. */
+  align-self: baseline;
+  margin-top: auto;
+  margin-bottom: auto;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
