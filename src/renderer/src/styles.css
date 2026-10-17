@@ -2796,7 +2796,8 @@ button:has(> .icon),
   justify-content: center;
   cursor: pointer;
 }
-.player-stage video {
+.player-stage video,
+.player-stage canvas {
   max-width: 100%;
   max-height: 100%;
   outline: none;

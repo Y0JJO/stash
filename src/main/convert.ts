@@ -217,7 +217,8 @@ export function trimVideo(src: string, out: string, start: number, duration: num
     mode === 'fast'
       ? [...range, '-c', 'copy', '-avoid_negative_ts', 'make_zero']
       : mode === 'gif'
-        ? [...range, '-an', '-vf', "fps=15,scale=-2:'min(480,ih)':flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse=dither=bayer"]
+        ? // A GIF source keeps its own frames and size; video is thinned out to keep the file small.
+          [...range, '-an', '-vf', `${/\.gif$/i.test(src) ? '' : "fps=15,scale=-2:'min(480,ih)':flags=lanczos,"}split[a][b];[a]palettegen[p];[b][p]paletteuse=dither=bayer`]
         : [...range, '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '192k']
   return new Promise((resolve, reject) => {
     const child = spawn(FFMPEG, ['-y', '-v', 'error', ...args, out], { windowsHide: true })

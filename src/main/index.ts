@@ -345,6 +345,13 @@ function registerIpc(): void {
   })
   handle('convert:cancel', () => conversion?.cancel())
 
+  // The GIF player decodes the file itself (ImageDecoder); bytes go over IPC so stash:// needs no CORS.
+  handle('items:bytes', async (id: string) => {
+    const p = need().filePath(id)
+    if (!p) throw new Error('Файл не найден')
+    if ((await fs.promises.stat(p)).size > 300 * 1024 * 1024) throw new Error('Файл слишком большой')
+    return new Uint8Array(await fs.promises.readFile(p))
+  })
   handle('video:info', async (id: string) => {
     const p = need().filePath(id)
     if (!p) throw new Error('Файл не найден')

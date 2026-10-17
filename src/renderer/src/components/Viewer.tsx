@@ -15,13 +15,16 @@ interface Props {
   onGrabFrame?(id: string, time: number, target: 'library' | 'clipboard' | 'file'): Promise<unknown>
 }
 
+/** GIFs get the video player (frame stepping, speed, trimming); needs the browser's ImageDecoder. */
+const isGif = (item: ItemLite | undefined) => item?.ext === 'gif' && 'ImageDecoder' in window
+
 /** Full-window preview with zoom/pan for images and a player for video. */
 export function Viewer({ items, index, onIndex, onClose, onGrabFrame }: Props) {
   const item = items[index]
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const isVideo = items[index]?.kind === 'video'
+      const isVideo = items[index]?.kind === 'video' || isGif(items[index])
       if (e.key === 'Escape' || (e.key === ' ' && !isVideo) || e.key === 'Enter') {
         e.preventDefault()
         onClose()
@@ -63,8 +66,8 @@ export function Viewer({ items, index, onIndex, onClose, onGrabFrame }: Props) {
         </button>
       </div>
       <div className="viewer-stage">
-        {item.kind === 'video' && BROWSER_VIDEO.has(item.ext) ? (
-          <VideoPlayer key={item.id} item={item} onGrab={(t, target) => onGrabFrame?.(item.id, t, target) ?? Promise.resolve()} />
+        {(item.kind === 'video' && BROWSER_VIDEO.has(item.ext)) || isGif(item) ? (
+          <VideoPlayer key={item.id} item={item} gif={isGif(item)} onGrab={(t, target) => onGrabFrame?.(item.id, t, target) ?? Promise.resolve()} />
         ) : (
           <ZoomImage
             key={item.id}

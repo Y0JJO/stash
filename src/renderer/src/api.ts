@@ -160,6 +160,7 @@ export const api = {
   makeStoryboard: (id: string, opts: StoryboardOptions) => call<{ frames: number; folderId: string | null }>('storyboard:make', id, opts),
   grabFrame: (id: string, at: number, folderId: string | null, target: 'library' | 'clipboard' | 'file' = 'library') =>
     call<string | null>('video:grabFrame', id, at, folderId, target),
+  bytes: (id: string) => call<Uint8Array>('items:bytes', id),
   videoInfo: (id: string) => call<{ fps: number }>('video:info', id),
   trimVideo: (id: string, start: number, end: number, mode: 'exact' | 'fast' | 'gif', target: 'library' | 'file' = 'library') =>
     call<string | null>('video:trim', id, start, end, mode, target),

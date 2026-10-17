@@ -4,13 +4,19 @@ import { api, fileUrl } from '../api'
 import { clamp, keyOf, loadPref, savePref } from '../util'
 import { Icon } from './Icon'
 import { getSettings, useSettings } from '../settings'
+import { GifMedia } from '../gifMedia'
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4, 8]
 
 type GrabTarget = 'library' | 'clipboard' | 'file'
 
+/** What the player drives: a <video>, or a GIF drawn on a canvas with the same API. */
+type Media = HTMLVideoElement | GifMedia
+
 interface Props {
   item: ItemLite
+  /** Play an animated GIF (on a canvas) instead of a video. */
+  gif?: boolean
   /** Saves the frame at `time` (seconds). */
   onGrab(time: number, target: GrabTarget): Promise<unknown>
 }
@@ -26,12 +32,12 @@ function fmtMs(t: number): string {
 }
 
 /**
- * Video player for the viewer: wheel scrubbing (Ctrl = one frame), frame stepping, millisecond /
+ * Video (and GIF) player for the viewer: wheel scrubbing (Ctrl = one frame), frame stepping, millisecond /
  * frame counter, speed, loop, frame screenshots, and cutting a fragment out (I / O marks).
  */
-export function VideoPlayer({ item, onGrab }: Props) {
+export function VideoPlayer({ item, gif, onGrab }: Props) {
   const prefs = useSettings()
-  const video = useRef<HTMLVideoElement>(null)
+  const video = useRef<Media | null>(null)
   const stage = useRef<HTMLDivElement>(null)
   const bar = useRef<HTMLDivElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -62,8 +68,42 @@ export function VideoPlayer({ item, onGrab }: Props) {
   }
 
   useEffect(() => {
-    api.videoInfo(item.id).then((i) => setFps(i.fps)).catch(() => {})
-  }, [item.id])
+    if (!gif) api.videoInfo(item.id).then((i) => setFps(i.fps)).catch(() => {})
+  }, [item.id, gif])
+
+  /** Duration, saved position and the player's settings, once the media knows its length. */
+  const onReady = (v: Media) => {
+    setDuration(v.duration || item.duration || 0)
+    if (v instanceof GifMedia) setFps(v.duration ? v.frameCount / v.duration : 10)
+    if (prefs.videoRememberPosition) {
+      const saved = Number(localStorage.getItem(`stash.pos.${item.id}`))
+      if (saved > 1 && saved < v.duration - 1) v.currentTime = saved
+    }
+    v.playbackRate = speed
+    v.loop = effectiveLoop
+    v.muted = muted
+    v.volume = volume
+  }
+
+  // GIF: the canvas gets its GifMedia as soon as it mounts, before the effects below run.
+  const gifCanvas = useCallback(
+    (c: HTMLCanvasElement | null) => {
+      if (!c || video.current) return
+      const m = new GifMedia(() => api.bytes(item.id), c)
+      video.current = m
+      m.addEventListener('play', () => setPlaying(true))
+      m.addEventListener('pause', () => setPlaying(false))
+      m.addEventListener('seeked', () => setTime(m.currentTime))
+      m.addEventListener('timeupdate', () => setTime(m.currentTime))
+      m.addEventListener('loadedmetadata', () => {
+        onReady(m)
+        if (getSettings().videoAutoplay) void m.play()
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [item.id]
+  )
+  useEffect(() => () => (video.current instanceof GifMedia ? video.current.close() : undefined), [])
 
   useEffect(() => {
     savePref('player.speed', speed)
@@ -116,8 +156,16 @@ export function VideoPlayer({ item, onGrab }: Props) {
     }
   }, [item.id])
 
-  const frameOf = (t: number) => Math.floor(t * fps + 1e-3)
-  const totalFrames = Math.max(1, Math.round(duration * fps))
+  const gm = () => (video.current instanceof GifMedia ? video.current : null)
+  // GIF frames have their own delays, so frame maths goes through the GIF's timeline.
+  const frameOf = (t: number) => gm()?.frameAt(t) ?? Math.floor(t * fps + 1e-3)
+  const totalFrames = gm()?.frameCount ?? Math.max(1, Math.round(duration * fps))
+  /** Start of frame `i`, and its middle (a safe time to ask ffmpeg for exactly that frame). */
+  const startOf = (i: number) => gm()?.frameStart(i) ?? i / fps
+  const middleOf = (i: number) => {
+    const g = gm()
+    return g ? (g.frameStart(i) + g.frameEnd(i)) / 2 : (i + 0.5) / fps
+  }
 
   const seek = useCallback(
     (t: number) => {
@@ -144,8 +192,9 @@ export function VideoPlayer({ item, onGrab }: Props) {
       if (!v) return
       v.pause()
       const target = clamp(frameOf(v.currentTime) + n, 0, totalFrames - 1)
-      seek((target + 0.5) / fps)
+      seek(middleOf(target))
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [fps, totalFrames, seek]
   )
 
@@ -154,7 +203,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
     if (!v) return
     v.pause()
     // Ask for the middle of the frame on screen so ffmpeg returns exactly that frame.
-    const t = (frameOf(v.currentTime) + 0.5) / fps
+    const t = middleOf(frameOf(v.currentTime))
     flash('Сохраняю кадр…')
     try {
       await onGrab(t, target)
@@ -165,7 +214,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
   }
 
   // ----- trimming -----
-  const frameStart = (t: number) => frameOf(t) / fps
+  const frameStart = (t: number) => startOf(frameOf(t))
   /** Moves one edge of the fragment; opens the panel (whole video selected) on first use. */
   const mark = (edge: 'a' | 'b', t: number) => {
     const min = 1 / fps
@@ -195,6 +244,19 @@ export function VideoPlayer({ item, onGrab }: Props) {
   }
 
   const cutMenu = async () => {
+    if (gif) {
+      const r = await api.menu(
+        [
+          { id: 'gif', label: 'В библиотеку как GIF', icon: 'image' },
+          { id: 'exact', label: 'В библиотеку как видео (MP4)', icon: 'scissors' },
+          { id: 'file', label: 'Сохранить GIF как файл…', icon: 'export' }
+        ],
+        { search: false }
+      )
+      if (r === 'file') cut('gif', 'file')
+      else if (r) cut(r as 'exact' | 'gif')
+      return
+    }
     const r = await api.menu(
       [
         { id: 'exact', label: 'В библиотеку — точно по кадрам (MP4)', icon: 'scissors' },
@@ -322,14 +384,23 @@ export function VideoPlayer({ item, onGrab }: Props) {
   }
 
   // Times are shown snapped to the start of their frame, so stepping reads 2.000 → 2.033 → 2.067.
-  const label = (t: number) => (frames ? String(frameOf(t)) : fmtMs(frameOf(t) / fps))
+  const label = (t: number) => (frames ? String(frameOf(t)) : fmtMs(startOf(frameOf(t))))
   const progress = duration ? (time / duration) * 100 : 0
 
   return (
     <div className={`player${full ? ' full' : ''}`} ref={stage}>
       <div className="player-stage" onClick={toggle} onDoubleClick={toggleFull}>
+        {gif ? (
+          <canvas
+            ref={gifCanvas}
+            className={prefs.transparentGrid ? 'checker' : undefined}
+            style={{ imageRendering: prefs.imageSmoothing === 'pixelated' ? 'pixelated' : 'auto' }}
+          />
+        ) : (
         <video
-          ref={video}
+          ref={(el) => {
+            if (el) video.current = el
+          }}
           key={item.id}
           src={fileUrl(item.id)}
           autoPlay={prefs.videoAutoplay}
@@ -338,19 +409,9 @@ export function VideoPlayer({ item, onGrab }: Props) {
           onPause={() => setPlaying(false)}
           onSeeked={(e) => setTime(e.currentTarget.currentTime)}
           onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget
-            setDuration(v.duration || item.duration || 0)
-            if (prefs.videoRememberPosition) {
-              const saved = Number(localStorage.getItem(`stash.pos.${item.id}`))
-              if (saved > 1 && saved < v.duration - 1) v.currentTime = saved
-            }
-            v.playbackRate = speed
-            v.loop = effectiveLoop
-            v.muted = muted
-            v.volume = volume
-          }}
+          onLoadedMetadata={(e) => onReady(e.currentTarget)}
         />
+        )}
         {note && <div className="player-note">{note}</div>}
       </div>
 
@@ -364,16 +425,21 @@ export function VideoPlayer({ item, onGrab }: Props) {
             Конец <b>{label(trim.b)}</b>
           </button>
           <span className="pl-trim-len">
-            Длина <b>{frames ? `${Math.round((trim.b - trim.a) * fps)} кадр.` : `${(trim.b - trim.a).toFixed(3)} с`}</b>
+            Длина <b>{frames ? `${gif ? frameOf(trim.b) - frameOf(trim.a) : Math.round((trim.b - trim.a) * fps)} кадр.` : `${(trim.b - trim.a).toFixed(3)} с`}</b>
           </span>
           <button className="pl-btn" onClick={() => (seek(trim.a), void video.current?.play())} title="Проиграть фрагмент с начала">
             <Icon name="play" size={14} filled />
           </button>
           <span className="pl-trim-hint">Тяните края на шкале или жмите I / O</span>
-          <button className="pl-cut" disabled={cutting} onClick={() => cut('exact')} title="Вырезать фрагмент в библиотеку (точно по кадрам, MP4)">
+          <button
+            className="pl-cut"
+            disabled={cutting}
+            onClick={() => cut(gif ? 'gif' : 'exact')}
+            title={gif ? 'Вырезать фрагмент в библиотеку (GIF)' : 'Вырезать фрагмент в библиотеку (точно по кадрам, MP4)'}
+          >
             {cutting ? 'Вырезаю…' : 'Вырезать в библиотеку'}
           </button>
-          <button className="pl-btn" disabled={cutting} onClick={cutMenu} title="Другие варианты: без перекодирования, GIF, в файл">
+          <button className="pl-btn" disabled={cutting} onClick={cutMenu} title={gif ? 'Другие варианты: MP4, в файл' : 'Другие варианты: без перекодирования, GIF, в файл'}>
             <Icon name="chevron-down" size={13} />
           </button>
           <button className="pl-btn" onClick={() => setTrim(null)} title="Закрыть обрезку (X)">
@@ -392,6 +458,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
         <button className="pl-btn" onClick={() => stepFrames(1)} title="Кадр вперёд ( . или Ctrl+колесо)">
           <Icon name="skip-forward" size={16} />
         </button>
+        {!gif && (
         <div className="pl-volume">
           <button className="pl-btn" onClick={() => setMuted((m) => !m)} title="Звук (M)">
             <Icon name={muted || volume === 0 ? 'mute' : 'sound'} size={16} />
@@ -408,6 +475,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
             }}
           />
         </div>
+        )}
         <button className="pl-time" onClick={() => setFrames((f) => !f)} title="Переключить: время с миллисекундами / кадры (T)">
           <b>{label(time)}</b>
           <span>/</span>
@@ -431,7 +499,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
           )}
           {hover && (
             <div className="pl-tip" style={{ left: hover.x }}>
-              {frames ? `кадр ${frameOf(hover.t)}` : fmtMs(frameOf(hover.t) / fps)}
+              {frames ? `кадр ${frameOf(hover.t)}` : fmtMs(startOf(frameOf(hover.t)))}
             </div>
           )}
         </div>
@@ -460,7 +528,7 @@ export function VideoPlayer({ item, onGrab }: Props) {
           <Icon name={full ? 'minimize' : 'fullscreen'} size={16} />
         </button>
         <span className="pl-fps" title="Частота кадров">
-          {Math.round(fps * 100) / 100} fps
+          {gif ? `${totalFrames} кадр.` : `${Math.round(fps * 100) / 100} fps`}
         </span>
       </div>
     </div>
