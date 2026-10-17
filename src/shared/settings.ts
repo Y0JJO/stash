@@ -1,7 +1,7 @@
 /** App preferences. Stored by the main process in config.json; the renderer mirrors them. */
 export interface Settings {
   // ----- general -----
-  theme: 'dark' | 'black' | 'gray' | 'blue' | 'purple'
+  theme: 'glass' | 'dark' | 'black' | 'gray' | 'blue' | 'purple'
   /** UI scale, 0.8 … 1.5. */
   zoom: number
   sidebarCounts: boolean
@@ -65,7 +65,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: 'dark',
+  theme: 'glass',
   zoom: 1,
   sidebarCounts: true,
   launchAtLogin: false,

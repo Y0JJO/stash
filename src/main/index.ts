@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, protocol, shell, type MenuItemConstructorOptions, type NativeImage } from 'electron'
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
@@ -17,7 +17,7 @@ import { Conversion, trimVideo, type TrimMode } from './convert'
 import { SettingsManager } from './settings'
 import { Updater } from './updater'
 import { browserExtInfo, extensionDir, openExtensionsPage, syncExtension } from './browserExt'
-import type { Settings } from '../shared/settings'
+import { DEFAULT_SETTINGS, type Settings } from '../shared/settings'
 import { PluginHost } from './pluginHost'
 import { boardLayers, boardScene, boardSvg, renderBoardPng } from './boards'
 import { copyFiles, foregroundWindow, pressCtrl, stopKeys, warmUpKeys } from './winKeys'
@@ -1235,6 +1235,9 @@ async function installPlugin(file: string): Promise<void> {
 
 function createWindow(): void {
   const b = config.bounds
+  const glass = (settings?.get() ?? { ...DEFAULT_SETTINGS, ...(config.settings ?? {}) }).theme === 'glass'
+  // The glass is tinted by the system theme; the interface is dark, so ask for dark glass.
+  nativeTheme.themeSource = 'dark'
   win = new BrowserWindow({
     x: b?.x,
     y: b?.y,
@@ -1243,13 +1246,18 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     show: false,
-    backgroundColor: '#141518',
+    // "Стекло" (the default theme) starts transparent with the OS glass behind it; see applyWindowLook.
+    backgroundColor: glass ? '#00000000' : '#141518',
     title: 'D3S3RT',
     titleBarStyle: 'hidden',
     // Windows draws its window buttons over the toolbar; macOS keeps its traffic lights on the left.
     ...(process.platform === 'darwin'
-      ? { trafficLightPosition: { x: 14, y: 14 } }
-      : { icon: path.join(app.getAppPath(), 'resources', 'icon.ico'), titleBarOverlay: { color: '#1a1b1f', symbolColor: '#b9bcc4', height: 44 } }),
+      ? { trafficLightPosition: { x: 14, y: 14 }, ...(glass ? { vibrancy: 'under-window' as const } : {}) }
+      : {
+          icon: path.join(app.getAppPath(), 'resources', 'icon.ico'),
+          titleBarOverlay: { color: glass ? '#00000000' : '#1a1b1f', symbolColor: '#d6d4e0', height: 44 },
+          ...(glass ? { backgroundMaterial: 'acrylic' as const } : {})
+        }),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,

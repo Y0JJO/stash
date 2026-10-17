@@ -18,6 +18,21 @@ export interface SettingsDeps {
 
 const SEEN_LIMIT = 5000
 const TITLEBAR: Record<string, string> = { dark: '#1a1b1f', black: '#0a0a0b', gray: '#323338', blue: '#151c2e', purple: '#1e172b' }
+const WINDOW_BG: Record<string, string> = { dark: '#141518', black: '#000000', gray: '#2b2c30', blue: '#101624', purple: '#17121f' }
+
+/**
+ * "Стекло": the OS draws frosted glass behind the page (Acrylic on Windows 11, vibrancy on macOS) and
+ * the page itself is transparent. Other themes get an opaque window in their own colour.
+ */
+export function applyWindowLook(w: BrowserWindow, theme: string): void {
+  const glass = theme === 'glass'
+  w.setBackgroundColor(glass ? '#00000000' : (WINDOW_BG[theme] ?? WINDOW_BG.dark))
+  if (process.platform === 'darwin') w.setVibrancy(glass ? 'under-window' : null)
+  else {
+    w.setBackgroundMaterial(glass ? 'acrylic' : 'none')
+    w.setTitleBarOverlay({ color: glass ? '#00000000' : (TITLEBAR[theme] ?? TITLEBAR.dark), symbolColor: '#d6d4e0', height: 44 })
+  }
+}
 
 /** Owns preferences: persistence plus every side effect outside the renderer. */
 export class SettingsManager {
@@ -63,9 +78,9 @@ export class SettingsManager {
   private apply(s: Settings, before: Settings | null): string[] {
     const warnings: string[] = []
     this.applyZoom()
-    // Keep the native window buttons in step with the theme's panel colour.
+    // Window material and the native window buttons follow the theme.
     const w = this.deps.win()
-    if (w && !w.isDestroyed() && process.platform !== 'darwin') w.setTitleBarOverlay({ color: TITLEBAR[s.theme] ?? TITLEBAR.dark, symbolColor: '#b9bcc4', height: 44 })
+    if (w && !w.isDestroyed() && (!before || before.theme !== s.theme)) applyWindowLook(w, s.theme)
 
     // Only touch the Windows login item when the user actually flips the switch.
     if (before && before.launchAtLogin !== s.launchAtLogin) {

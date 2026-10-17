@@ -23,6 +23,7 @@ const SECTIONS: { id: SectionId; label: string; icon: string; group: number; key
 ]
 
 const THEMES: { key: Settings['theme']; label: string; color: string }[] = [
+  { key: 'glass', label: 'Стекло', color: 'linear-gradient(135deg, rgba(255,255,255,.35), rgba(168,152,255,.35)), #3a3846' },
   { key: 'dark', label: 'Тёмная', color: '#1a1b1f' },
   { key: 'black', label: 'Чёрная', color: '#000000' },
   { key: 'gray', label: 'Серая', color: '#3a3b40' },

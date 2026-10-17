@@ -3874,3 +3874,181 @@ html[data-platform='mac'] .titlebar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- theme "Стекло": frosted glass (the OS draws the blur behind a transparent page) ---------- */
+
+html[data-theme='glass'] {
+  --bg: transparent;
+  --panel: rgba(255, 255, 255, 0.045);
+  /* Popovers and dialogs sit over busy pictures: nearly opaque, with their own blur. */
+  --panel-2: rgba(40, 38, 52, 0.82);
+  --hover: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #f3f2f8;
+  --muted: rgba(232, 230, 244, 0.58);
+  --accent: #a898ff;
+  --accent-soft: rgba(168, 152, 255, 0.2);
+  --radius: 12px;
+  --glass-edge: rgba(255, 255, 255, 0.12);
+  --glass-fill: rgba(255, 255, 255, 0.06);
+}
+html[data-theme='glass'],
+html[data-theme='glass'] body,
+html[data-theme='glass'] #root {
+  /* A light tint over the OS glass keeps text readable on a bright desktop. */
+  background: rgba(30, 28, 40, 0.3);
+}
+html[data-theme='glass'] body,
+html[data-theme='glass'] #root {
+  background: transparent;
+}
+
+html[data-theme='glass'] button {
+  background: var(--glass-fill);
+  border-color: var(--glass-edge);
+  border-radius: 10px;
+}
+html[data-theme='glass'] button.primary {
+  background: linear-gradient(180deg, #b2a4ff, #9686f5);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 18px rgba(150, 134, 245, 0.35);
+}
+html[data-theme='glass'] button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #bdb1ff, #a293fa);
+}
+html[data-theme='glass'] .icon-btn,
+html[data-theme='glass'] .fchip,
+html[data-theme='glass'] .filter-reset,
+html[data-theme='glass'] .facet-tool,
+html[data-theme='glass'] .rule-switch button,
+html[data-theme='glass'] .tag-views button,
+html[data-theme='glass'] .pl-btn,
+html[data-theme='glass'] .pl-time,
+html[data-theme='glass'] .segmented button,
+html[data-theme='glass'] .lib-switch,
+html[data-theme='glass'] .facet-clear {
+  background: transparent;
+  border-color: transparent;
+}
+html[data-theme='glass'] input,
+html[data-theme='glass'] select,
+html[data-theme='glass'] textarea {
+  background: var(--glass-fill);
+  border-color: var(--glass-edge);
+  border-radius: 10px;
+}
+html[data-theme='glass'] input:focus,
+html[data-theme='glass'] select:focus,
+html[data-theme='glass'] textarea:focus {
+  border-color: rgba(168, 152, 255, 0.7);
+}
+html[data-theme='glass'] select option {
+  background: #2a2836;
+}
+
+/* window chrome */
+html[data-theme='glass'] .titlebar {
+  background: transparent;
+  border-bottom: none;
+}
+html[data-theme='glass'] .lib-switch {
+  border-right: none;
+}
+html[data-theme='glass'] .search input {
+  height: 32px;
+  padding-left: 12px;
+  border-radius: 11px;
+}
+html[data-theme='glass'] .segmented {
+  border-color: var(--glass-edge);
+  border-radius: 11px;
+  background: var(--glass-fill);
+  padding: 2px;
+}
+html[data-theme='glass'] .segmented button {
+  border-radius: 8px;
+}
+html[data-theme='glass'] .segmented button.on {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* sidebar: one big pane of lighter glass */
+html[data-theme='glass'] .sidebar {
+  background: rgba(255, 255, 255, 0.075);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+html[data-theme='glass'] .side-row {
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+html[data-theme='glass'] .side-row.active {
+  background: linear-gradient(180deg, rgba(178, 164, 255, 0.32), rgba(150, 134, 245, 0.22));
+  border-color: rgba(200, 190, 255, 0.28);
+}
+
+/* content */
+html[data-theme='glass'] .main {
+  background: transparent;
+}
+html[data-theme='glass'] .filter-bar {
+  background: transparent;
+  border-bottom: none;
+}
+html[data-theme='glass'] .tile-media {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+html[data-theme='glass'] .tile:hover .tile-media {
+  outline-color: rgba(255, 255, 255, 0.35);
+}
+
+/* inspector: a floating glass card */
+html[data-theme='glass'] .inspector {
+  margin: 0 10px 10px 0;
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+html[data-theme='glass'] .insp-preview {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+}
+
+/* everything that floats over pictures: frosted, with its own blur */
+html[data-theme='glass'] .drop-pop,
+html[data-theme='glass'] .cm-panel,
+html[data-theme='glass'] .dialog,
+html[data-theme='glass'] .quick,
+html[data-theme='glass'] .settings {
+  background: var(--panel-2);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(28px) saturate(1.4);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+html[data-theme='glass'] .cm-search,
+html[data-theme='glass'] .facet-head,
+html[data-theme='glass'] .facet-foot {
+  border-color: var(--line);
+}
+html[data-theme='glass'] .modal-backdrop {
+  background: rgba(10, 8, 16, 0.35);
+}
+html[data-theme='glass'] .titlebar .toolbar {
+  height: 36px;
+  margin: 4px 8px 4px 0;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html[data-theme='glass'] .titlebar .toolbar input,
+html[data-theme='glass'] .titlebar .toolbar select,
+html[data-theme='glass'] .titlebar .toolbar .segmented {
+  height: 28px;
+}
+html[data-theme='glass'] .titlebar .toolbar button.primary {
+  height: 28px;
+}
